@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gap Analysis Tool</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.5/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.min.js"></script>
+  
+  <!-- Firebase SDK (solo Firestore, NO Storage) -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; }
+    .modal-overlay { backdrop-filter: blur(4px); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    /* ================================================================
+       📱 CONFIGURACIÓN - EDITA DESDE TU MÓVIL ANDROID
+       ================================================================ */
+    
+    // 1️⃣ API DE MISTRAL (YA CONFIGURADA ✅)
+    const MISTRAL_API_KEY = 'mAG1EEnyOQjfy5oQ3WPv2wTay0DV9Jhw';
+
+    // 2️⃣ FIREBASE (CONFIGURADO ✅)
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyDUZR1huz-XHFQBI2CnRGDMxg_f3kFErPA",
+      authDomain: "gapanalysis-8b408.firebaseapp.com",
+      projectId: "gapanalysis-8b408",
+      storageBucket: "gapanalysis-8b408.firebasestorage.app",
+      messagingSenderId: "48683423858",
+      appId: "1:48683423858:web:7ca2267a11f448b2864aeb"
+    };
+
+    /* ================================================================
+       ⚠️ NO EDITES MÁS ABAJO (a menos que sepas programar)
+       ================================================================ */
+
+    // Detectar si Firebase está configurado
+    const USE_FIREBASE = Boolean(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId);
+    
+    // Inicializar Firebase si está configurado
+    let db = null;
+    
+    if (USE_FIREBASE) {
+      try {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(FIREBASE_CONFIG);
+        }
+        db = firebase.firestore();
+        console.log('✅ Firestore activo - Datos en la nube');
+        console.log('📁 Archivos permanecen en local (no se usa Storage)');
+      } catch (error) {
+        console.error('❌ Error Firebase:', error);
+        alert('Error en Firebase. Revisa las credenciales y reglas de Firestore.');
+      }
+    } else {
+      console.log('ℹ️ Usando localStorage (Firebase no configurado)');
+    }
+
+    // ============================================================
+    // 💾 STORAGE HÍBRIDO - Funciona con localStorage o Firestore
+    // ============================================================
+    
+    const DataStore = {
+      async saveFramework(fw) {
+        if (USE_FIREBASE) {
+          const ref = db.collection('frameworks');
+          if (fw.id) {
+            await ref.doc(fw.id).set(fw);
+            return fw;
+          } else {
+            const doc = await ref.add(fw);
+            return { ...fw, id: doc.id };
+          }
+        } else {
+          const all = JSON.parse(localStorage.getItem('frameworks') || '[]');
+          if (!fw.id) fw.id = Date.now().toString();
+          const idx = all.findIndex(f => f.id === fw.id);
+          if (idx >= 0) all[idx] = fw;
+          else all.push(fw);
+          localStorage.setItem('frameworks', JSON.stringify(all));
+          return fw;
+        }
+      },
+
+      async getFrameworks() {
+        if (USE_FIREBASE) {
+          const snap = await db.collection('frameworks').get();
+          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } else {
+          return JSON.parse(localStorage.getItem('frameworks') || '[]');
+        }
+      },
+
+      async deleteFramework(id) {
+        if (USE_FIREBASE) {
+          await db.collection('frameworks').doc(id).delete();
+        } else {
+          const all = JSON.parse(localStorage.getItem('frameworks') || '[]');
+          localStorage.setItem('frameworks', JSON.stringify(all.filter(f => f.id !== id)));
+        }
+      },
+
+      async saveAnalisis(a) {
+        if (USE_FIREBASE) {
+          const ref = db.collection('analisis');
+          if (a.id) {
+            await ref.doc(a.id).set(a);
+            return a;
+          } else {
+            const doc = await ref.add(a);
+            return { ...a, id: doc.id };
+          }
+        } else {
+          const all = JSON.parse(localStorage.getItem('analisis') || '[]');
+          if (!a.id) a.id = Date.now().toString();
+          const idx = all.findIndex(x => x.id === a.id);
+          if (idx >= 0) all[idx] = a;
+          else all.push(a);
+          localStorage.setItem('analisis', JSON.stringify(all));
+          return a;
+        }
+      },
+
+      async getAnalisis() {
+        if (USE_FIREBASE) {
+          const snap = await db.collection('analisis').orderBy('createdAt', 'desc').get();
+          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } else {
+          return JSON.parse(localStorage.getItem('analisis') || '[]');
+        }
+      },
+
+      async getAnalisisById(id) {
+        if (USE_FIREBASE) {
+          const doc = await db.collection('analisis').doc(id).get();
+          return doc.exists ? { id: doc.id, ...doc.data() } : null;
+        } else {
+          const all = JSON.parse(localStorage.getItem('analisis') || '[]');
+          return all.find(a => a.id === id) || null;
+        }
+      },
+
+      async uploadFile(file, analisisId) {
+        // Los archivos NO se suben a Firebase Storage
+        // Solo guardamos el nombre del archivo localmente
+        return { nombre: file.name, url: '#local', size: file.size };
+      }
+    };
+
+    // Iconos - usando emoji simples
+    const HomeIcon = ({ className }) => <span className={className}>🏠</span>;
+    const FolderIcon = ({ className }) => <span className={className}>📁</span>;
+    const FileTextIcon = ({ className }) => <span className={className}>📄</span>;
+    const PlusIcon = ({ className }) => <span className={className}>➕</span>;
+    const UploadIcon = ({ className }) => <span className={className}>⬆️</span>;
+    const Trash2Icon = ({ className }) => <span className={className}>🗑️</span>;
+    const EyeIcon = ({ className }) => <span className={className}>👁️</span>;
+    const ArrowLeftIcon = ({ className }) => <span className={className}>⬅️</span>;
+    const RefreshCwIcon = ({ className }) => <span className={className}>🔄</span>;
+    const DownloadIcon = ({ className }) => <span className={className}>⬇️</span>;
+    const EditIcon = ({ className }) => <span className={className}>✏️</span>;
+    const XIcon = ({ className }) => <span className={className}>❌</span>;
+    const CheckCircleIcon = ({ className }) => <span className={className}>✅</span>;
+    const AlertCircleIcon = ({ className }) => <span className={className}>⚠️</span>;
+
+    // Components
+    function Button({ children, variant = 'primary', size = 'md', className = '', onClick, disabled, ...props }) {
+      const variants = {
+        primary: 'bg-gray-900 text-white hover:bg-gray-800',
+        secondary: 'bg-white text-gray-900 border border-gray-200 hover:bg-gray-50',
+        ghost: 'bg-transparent text-gray-700 hover:bg-gray-100',
+        danger: 'bg-red-600 text-white hover:bg-red-700'
+      };
+      const sizes = {
+        sm: 'px-3 py-1.5 text-sm',
+        md: 'px-4 py-2 text-base',
+        lg: 'px-6 py-3 text-lg'
+      };
+      return (
+        <button
+          className={`rounded-lg font-medium transition-all ${variants[variant]} ${sizes[size]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
+          onClick={onClick}
+          disabled={disabled}
+          {...props}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    function Modal({ isOpen, onClose, title, children, size = 'md' }) {
+      if (!isOpen) return null;
+      const sizes = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl', xl: 'max-w-6xl' };
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 modal-overlay" onClick={onClose} />
+          <div className={`relative bg-white rounded-lg shadow-xl w-full ${sizes[size]} max-h-[90vh] flex flex-col`}>
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h2 className="text-xl font-medium text-gray-900">{title}</h2>
+              <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+                <XIcon className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">{children}</div>
+          </div>
+        </div>
+      );
+    }
+
+    // Parse Excel
+    function parseExcel(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+            const categorias = [];
+            let currentCat = null;
+            let currentElem = null;
+
+            rows.slice(1).forEach((row, i) => {
+              const catText = row[0]?.toString().trim();
+              const elemText = row[1]?.toString().trim();
+              const indText = row[2]?.toString().trim();
+
+              if (catText) {
+                if (currentCat && currentElem) currentCat.elementos.push(currentElem);
+                if (currentCat) categorias.push(currentCat);
+                currentCat = { id: `cat-${Date.now()}-${i}`, nombre: catText, elementos: [] };
+                currentElem = null;
+              }
+              if (elemText && currentCat) {
+                if (currentElem) currentCat.elementos.push(currentElem);
+                currentElem = { id: `elem-${Date.now()}-${i}`, nombre: elemText, indicaciones: [] };
+              }
+              if (indText && currentElem) {
+                currentElem.indicaciones.push({ id: `ind-${Date.now()}-${i}`, texto: indText });
+              }
+            });
+
+            if (currentCat && currentElem) currentCat.elementos.push(currentElem);
+            if (currentCat) categorias.push(currentCat);
+
+            resolve({ nombre: file.name.replace(/\.(xlsx|xls)$/, ''), categorias });
+          } catch (error) {
+            reject(error);
+          }
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    // Mistral API
+    async function analyzeWithMistral(indicacion, documentos) {
+      if (!MISTRAL_API_KEY || MISTRAL_API_KEY === '') {
+        alert('⚠️ Configura tu API Key de Mistral primero!\n\nEdita el archivo HTML (línea 32) y pon tu API key.');
+        return { propuestaRespuesta: 'API Key no configurada', gapsDetectados: [], confianza: 0 };
+      }
+
+      const docsText = documentos.map(d => `Documento: ${d.nombre}`).join('\n');
+      const prompt = `Eres un analista experto. Analiza los siguientes documentos en relación con este criterio:
+
+CRITERIO: ${indicacion}
+
+DOCUMENTOS:
+${docsText}
+
+Responde en JSON con:
+{
+  "propuestaRespuesta": "tu análisis",
+  "gapsDetectados": ["gap1", "gap2"],
+  "confianza": 0.85
+}`;
+
+      try {
+        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${MISTRAL_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: 'mistral-small-latest',
+            messages: [{ role: 'user', content: prompt }]
+          })
+        });
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+        return { propuestaRespuesta: content, gapsDetectados: [], confianza: 0.5 };
+      } catch (error) {
+        console.error('Mistral error:', error);
+        return { propuestaRespuesta: 'Error al analizar', gapsDetectados: [], confianza: 0 };
+      }
+    }
+
+    async function globalAnalysis(respuestas, framework) {
+      if (!MISTRAL_API_KEY || MISTRAL_API_KEY === '') {
+        alert('⚠️ Configura tu API Key de Mistral primero!');
+        return { fortalezas: 'API Key no configurada', debilidades: 'API Key no configurada' };
+      }
+
+      const respuestasText = respuestas.map((r, i) => {
+        const cat = framework.categorias.find(c => c.id === r.categoriaId);
+        const elem = cat?.elementos.find(e => e.id === r.elementoId);
+        const ind = elem?.indicaciones.find(i => i.id === r.indicacionId);
+        return `${i + 1}. ${ind?.texto}\nRespuesta: ${r.respuestaFinal || r.propuestaIA}\nGaps: ${r.gaps.join(', ')}`;
+      }).join('\n\n');
+
+      const prompt = `Analiza estas respuestas y proporciona:
+
+RESPUESTAS:
+${respuestasText}
+
+Responde en JSON:
+{
+  "fortalezas": "análisis de fortalezas",
+  "debilidades": "análisis de debilidades"
+}`;
+
+      try {
+        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${MISTRAL_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: 'mistral-small-latest',
+            messages: [{ role: 'user', content: prompt }]
+          })
+        });
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+        return { fortalezas: 'No generado', debilidades: 'No generado' };
+      } catch (error) {
+        console.error('Mistral error:', error);
+        return { fortalezas: 'Error', debilidades: 'Error' };
+      }
+    }
+
+    // Export to Word - Pending Items Report
+    async function exportPendingItemsReport(analisis, framework) {
+      try {
+        console.log('Generando reporte de pendientes...');
+        const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = docx;
+
+        const children = [
+          new Paragraph({ 
+            text: `Guión de Entrevista - Puntos Pendientes`, 
+            heading: HeadingLevel.TITLE,
+            alignment: AlignmentType.CENTER
+          }),
+          new Paragraph({ text: `Análisis: ${analisis.nombre}`, heading: HeadingLevel.HEADING_2 }),
+          new Paragraph({ text: `Framework: ${framework.nombre}`, heading: HeadingLevel.HEADING_2 }),
+          new Paragraph({ text: `Fecha: ${new Date().toLocaleDateString('es-ES')}` }),
+          new Paragraph({ text: '' }),
+          new Paragraph({ 
+            text: 'Este documento contiene las indicaciones que requieren información adicional o aclaración durante la entrevista.',
+            spacing: { after: 400 }
+          }),
+          new Paragraph({ text: '' })
+        ];
+
+        let totalPendientes = 0;
+
+        framework.categorias.forEach(cat => {
+          const pendientesCat = [];
+          
+          cat.elementos.forEach(elem => {
+            const pendientesElem = [];
+            
+            elem.indicaciones.forEach(ind => {
+              const resp = analisis.respuestas.find(r => r.indicacionId === ind.id);
+              
+              // Consideramos pendiente si: no existe respuesta, tiene gaps, o no está revisado
+              const isPendiente = !resp || 
+                                 (resp.gaps && resp.gaps.length > 0) || 
+                                 resp.status !== 'revisado';
+              
+              if (isPendiente) {
+                pendientesElem.push({
+                  indicacion: ind,
+                  respuesta: resp,
+                  motivo: !resp ? 'Sin analizar' : 
+                         (resp.gaps && resp.gaps.length > 0) ? 'Gaps detectados' : 
+                         'Requiere revisión'
+                });
+              }
+            });
+
+            if (pendientesElem.length > 0) {
+              pendientesCat.push({ elemento: elem, pendientes: pendientesElem });
+            }
+          });
+
+          if (pendientesCat.length > 0) {
+            children.push(
+              new Paragraph({ text: '' }),
+              new Paragraph({ text: cat.nombre, heading: HeadingLevel.HEADING_1 })
+            );
+
+            pendientesCat.forEach(({ elemento, pendientes }) => {
+              children.push(
+                new Paragraph({ text: '' }),
+                new Paragraph({ text: elemento.nombre, heading: HeadingLevel.HEADING_2 })
+              );
+
+              pendientes.forEach(({ indicacion, respuesta, motivo }, idx) => {
+                totalPendientes++;
+                
+                children.push(
+                  new Paragraph({ text: '' }),
+                  new Paragraph({ 
+                    children: [
+                      new TextRun({ text: `${idx + 1}. `, bold: true }),
+                      new TextRun({ text: indicacion.texto })
+                    ]
+                  })
+                );
+
+                // Mostrar estado actual
+                children.push(
+                  new Paragraph({ 
+                    children: [
+                      new TextRun({ text: '   Estado: ', bold: true, italics: true }),
+                      new TextRun({ text: motivo, italics: true, color: 'FF6B6B' })
+                    ]
+                  })
+                );
+
+                // Si hay respuesta parcial, mostrarla
+                if (respuesta && respuesta.propuestaIA) {
+                  children.push(
+                    new Paragraph({ 
+                      children: [
+                        new TextRun({ text: '   Información actual: ', bold: true, italics: true }),
+                        new TextRun({ text: respuesta.respuestaFinal || respuesta.propuestaIA, italics: true })
+                      ]
+                    })
+                  );
+                }
+
+                // Si hay gaps, listarlos
+                if (respuesta && respuesta.gaps && respuesta.gaps.length > 0) {
+                  children.push(
+                    new Paragraph({ 
+                      children: [
+                        new TextRun({ text: '   Gaps detectados:', bold: true, color: 'D63031' })
+                      ]
+                    })
+                  );
+                  respuesta.gaps.forEach(gap => {
+                    children.push(
+                      new Paragraph({ text: `      • ${gap}`, color: 'D63031' })
+                    );
+                  });
+                }
+
+                // Espacio para notas de entrevista
+                children.push(
+                  new Paragraph({ 
+                    children: [
+                      new TextRun({ text: '   Notas de entrevista:', bold: true })
+                    ]
+                  }),
+                  new Paragraph({ text: '   _______________________________________________________________________' }),
+                  new Paragraph({ text: '   _______________________________________________________________________' }),
+                  new Paragraph({ text: '   _______________________________________________________________________' })
+                );
+              });
+            });
+          }
+        });
+
+        // Resumen al final
+        children.push(
+          new Paragraph({ text: '' }),
+          new Paragraph({ text: '' }),
+          new Paragraph({ text: 'Resumen', heading: HeadingLevel.HEADING_1 }),
+          new Paragraph({ 
+            children: [
+              new TextRun({ text: 'Total de puntos pendientes: ', bold: true }),
+              new TextRun({ text: totalPendientes.toString(), bold: true, color: 'FF6B6B' })
+            ]
+          }),
+          new Paragraph({ text: '' }),
+          new Paragraph({ 
+            text: 'Instrucciones: Durante la entrevista, utiliza este documento para registrar las respuestas y aclaraciones. Posteriormente, actualiza el análisis con la información obtenida.'
+          })
+        );
+
+        if (totalPendientes === 0) {
+          alert('¡Excelente! No hay puntos pendientes en este análisis.');
+          return;
+        }
+
+        console.log(`Total pendientes: ${totalPendientes}`);
+        const doc = new Document({ sections: [{ children }] });
+        
+        console.log('Generando blob...');
+        const blob = await Packer.toBlob(doc);
+        
+        console.log('Descargando archivo...');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Guion_Entrevista_${analisis.nombre.replace(/[^a-z0-9]/gi, '_')}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log('Reporte de pendientes generado');
+        alert(`Guión de entrevista generado con ${totalPendientes} puntos pendientes`);
+      } catch (error) {
+        console.error('Error en exportPendingItemsReport:', error);
+        throw error;
+      }
+    }
+    async function exportToWord(analisis, framework) {
+      try {
+        console.log('Iniciando exportación...', { analisis, framework });
+        const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+
+        const children = [
+          new Paragraph({ text: `Informe: ${analisis.nombre}`, heading: HeadingLevel.TITLE }),
+          new Paragraph({ text: `Framework: ${framework.nombre}`, heading: HeadingLevel.HEADING_2 }),
+          new Paragraph({ text: `Fecha: ${new Date().toLocaleDateString('es-ES')}` }),
+          new Paragraph({ text: '' }),
+          new Paragraph({ text: 'Documentos Revisados', heading: HeadingLevel.HEADING_2 }),
+          ...analisis.documentos.map(d => new Paragraph({ text: `• ${d.nombre}` })),
+          new Paragraph({ text: '' }),
+          new Paragraph({ text: 'Análisis Detallado', heading: HeadingLevel.HEADING_1 })
+        ];
+
+        framework.categorias.forEach(cat => {
+          children.push(new Paragraph({ text: cat.nombre, heading: HeadingLevel.HEADING_2 }));
+          cat.elementos.forEach(elem => {
+            children.push(new Paragraph({ text: elem.nombre, heading: HeadingLevel.HEADING_3 }));
+            elem.indicaciones.forEach(ind => {
+              const resp = analisis.respuestas.find(r => r.indicacionId === ind.id);
+              if (resp) {
+                children.push(
+                  new Paragraph({ children: [new TextRun({ text: 'Indicación: ', bold: true }), new TextRun(ind.texto)] }),
+                  new Paragraph({ children: [new TextRun({ text: 'Respuesta: ', bold: true }), new TextRun(resp.respuestaFinal || resp.propuestaIA)] })
+                );
+                if (resp.gaps && resp.gaps.length > 0) {
+                  children.push(new Paragraph({ children: [new TextRun({ text: 'Gaps: ', bold: true, color: 'FF0000' })] }));
+                  resp.gaps.forEach(gap => children.push(new Paragraph({ text: `  • ${gap}` })));
+                }
+              }
+            });
+          });
+        });
+
+        if (analisis.fortalezas) {
+          children.push(
+            new Paragraph({ text: '' }),
+            new Paragraph({ text: 'Análisis Global', heading: HeadingLevel.HEADING_1 }),
+            new Paragraph({ text: 'Fortalezas', heading: HeadingLevel.HEADING_2 }),
+            new Paragraph({ text: analisis.fortalezas }),
+            new Paragraph({ text: 'Debilidades', heading: HeadingLevel.HEADING_2 }),
+            new Paragraph({ text: analisis.debilidades || '' })
+          );
+        }
+
+        console.log('Creando documento...');
+        const doc = new Document({ sections: [{ children }] });
+        
+        console.log('Generando blob...');
+        const blob = await Packer.toBlob(doc);
+        
+        console.log('Descargando archivo...');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Analisis_${analisis.nombre.replace(/[^a-z0-9]/gi, '_')}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log('Exportación completada');
+        alert('Documento Word descargado correctamente');
+      } catch (error) {
+        console.error('Error en exportToWord:', error);
+        throw error;
+      }
+    }
+
+    // Main App
+    function App() {
+      const [page, setPage] = useState('home');
+      const [frameworks, setFrameworks] = useState([]);
+      const [analisis, setAnalisis] = useState([]);
+      const [currentAnalisis, setCurrentAnalisis] = useState(null);
+
+      useEffect(() => {
+        setFrameworks(storage.get('frameworks') || []);
+        setAnalisis(storage.get('analisis') || []);
+      }, []);
+
+      useEffect(() => {
+        storage.set('frameworks', frameworks);
+      }, [frameworks]);
+
+      useEffect(() => {
+        storage.set('analisis', analisis);
+      }, [analisis]);
+
+      return (
+        <div>
+          {page === 'home' && <HomePage setPage={setPage} />}
+          {page === 'frameworks' && <FrameworksPage frameworks={frameworks} setFrameworks={setFrameworks} setPage={setPage} />}
+          {page === 'analysis' && <AnalysisPage analisis={analisis} setAnalisis={setAnalisis} frameworks={frameworks} setPage={setPage} setCurrentAnalisis={setCurrentAnalisis} />}
+          {page === 'analysis-detail' && <AnalysisDetailPage analisis={analisis} setAnalisis={setAnalisis} frameworks={frameworks} currentId={currentAnalisis} setPage={setPage} />}
+        </div>
+      );
+    }
+
+    function HomePage({ setPage }) {
+      return (
+        <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+          <div className="max-w-6xl mx-auto px-4 py-16">
+            <div className="text-center mb-16">
+              <h1 className="text-5xl font-bold text-gray-900 mb-4">Gap Analysis Tool</h1>
+              <p className="text-xl text-gray-600">Analiza documentos contra frameworks con IA</p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+              <div onClick={() => setPage('frameworks')} className="group bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-lg cursor-pointer transition-all">
+                <div className="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center group-hover:bg-gray-900 transition-colors mb-6">
+                  <FolderIcon className="text-gray-600 group-hover:text-white transition-colors" />
+                </div>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-3">Frameworks</h2>
+                <p className="text-gray-600">Gestiona tus plantillas de análisis desde Excel</p>
+              </div>
+              <div onClick={() => setPage('analysis')} className="group bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-lg cursor-pointer transition-all">
+                <div className="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center group-hover:bg-gray-900 transition-colors mb-6">
+                  <FileTextIcon className="text-gray-600 group-hover:text-white transition-colors" />
+                </div>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-3">Análisis</h2>
+                <p className="text-gray-600">Crea análisis y genera reportes con IA</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function FrameworksPage({ frameworks, setFrameworks, setPage }) {
+      const [showModal, setShowModal] = useState(false);
+      const [showPreview, setShowPreview] = useState(false);
+      const [selectedFw, setSelectedFw] = useState(null);
+      const [nombre, setNombre] = useState('');
+
+      const handleUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const parsed = await parseExcel(file);
+          const fw = { id: Date.now().toString(), ...parsed, nombre: nombre || parsed.nombre, createdAt: new Date() };
+          setFrameworks([...frameworks, fw]);
+          setShowModal(false);
+          setNombre('');
+        } catch (error) {
+          alert('Error al cargar Excel');
+        }
+      };
+
+      const handleDelete = (id) => {
+        if (confirm('¿Eliminar framework?')) {
+          setFrameworks(frameworks.filter(f => f.id !== id));
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <div className="bg-white border-b border-gray-200">
+            <div className="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Button variant="ghost" size="sm" onClick={() => setPage('home')}>
+                  <ArrowLeftIcon className="w-4 h-4 mr-2" /> Inicio
+                </Button>
+                <h1 className="text-3xl font-bold">Frameworks</h1>
+              </div>
+              <Button onClick={() => setShowModal(true)}>
+                <PlusIcon className="w-5 h-5 mr-2" /> Nuevo
+              </Button>
+            </div>
+          </div>
+          <div className="max-w-7xl mx-auto px-4 py-8">
+            {frameworks.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-lg border">
+                <UploadIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium mb-2">No hay frameworks</h3>
+                <Button onClick={() => setShowModal(true)}>Crear Framework</Button>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-3 gap-6">
+                {frameworks.map(fw => (
+                  <div key={fw.id} className="bg-white rounded-lg border p-6 hover:shadow-md transition-shadow">
+                    <h3 className="text-lg font-semibold mb-2">{fw.nombre}</h3>
+                    <p className="text-sm text-gray-600 mb-4">{fw.categorias.length} categorías</p>
+                    <div className="flex gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => { setSelectedFw(fw); setShowPreview(true); }}>
+                        <EyeIcon className="w-4 h-4 mr-1" /> Ver
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDelete(fw.id)}>
+                        <Trash2Icon className="w-4 h-4 mr-1" /> Eliminar
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nuevo Framework">
+            <div className="space-y-4">
+              <input
+                type="text"
+                placeholder="Nombre del framework"
+                className="w-full px-3 py-2 border rounded-lg"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+              />
+              <input type="file" accept=".xlsx,.xls" onChange={handleUpload} className="w-full" />
+            </div>
+          </Modal>
+          <Modal isOpen={showPreview} onClose={() => setShowPreview(false)} title={selectedFw?.nombre} size="lg">
+            {selectedFw?.categorias.map(cat => (
+              <div key={cat.id} className="mb-4 border rounded p-4">
+                <h3 className="font-semibold text-lg mb-2">{cat.nombre}</h3>
+                {cat.elementos.map(elem => (
+                  <div key={elem.id} className="ml-4 mb-3">
+                    <h4 className="font-medium mb-1">{elem.nombre}</h4>
+                    <ul className="ml-4 text-sm text-gray-600">
+                      {elem.indicaciones.map(ind => (
+                        <li key={ind.id}>• {ind.texto}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Modal>
+        </div>
+      );
+    }
+
+    function AnalysisPage({ analisis, setAnalisis, frameworks, setPage, setCurrentAnalisis }) {
+      const [showModal, setShowModal] = useState(false);
+      const [nombre, setNombre] = useState('');
+      const [fwId, setFwId] = useState('');
+
+      const handleCreate = () => {
+        if (!nombre || !fwId) return alert('Completa todos los campos');
+        const fw = frameworks.find(f => f.id === fwId);
+        const newAnalisis = {
+          id: Date.now().toString(),
+          nombre,
+          frameworkId: fwId,
+          frameworkNombre: fw.nombre,
+          documentos: [],
+          respuestas: [],
+          status: 'borrador',
+          createdAt: new Date()
+        };
+        setAnalisis([...analisis, newAnalisis]);
+        setCurrentAnalisis(newAnalisis.id);
+        setPage('analysis-detail');
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <div className="bg-white border-b">
+            <div className="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Button variant="ghost" size="sm" onClick={() => setPage('home')}>
+                  <ArrowLeftIcon className="w-4 h-4 mr-2" /> Inicio
+                </Button>
+                <h1 className="text-3xl font-bold">Análisis</h1>
+              </div>
+              <Button onClick={() => setShowModal(true)} disabled={frameworks.length === 0}>
+                <PlusIcon className="w-5 h-5 mr-2" /> Nuevo
+              </Button>
+            </div>
+          </div>
+          <div className="max-w-7xl mx-auto px-4 py-8">
+            {frameworks.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-lg border">
+                <h3 className="text-lg font-medium mb-2">No hay frameworks</h3>
+                <Button onClick={() => setPage('frameworks')}>Ir a Frameworks</Button>
+              </div>
+            ) : analisis.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-lg border">
+                <h3 className="text-lg font-medium mb-2">No hay análisis</h3>
+                <Button onClick={() => setShowModal(true)}>Crear Análisis</Button>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-3 gap-6">
+                {analisis.map(a => (
+                  <div
+                    key={a.id}
+                    onClick={() => { setCurrentAnalisis(a.id); setPage('analysis-detail'); }}
+                    className="bg-white rounded-lg border p-6 hover:shadow-md cursor-pointer transition-shadow"
+                  >
+                    <h3 className="text-lg font-semibold mb-2">{a.nombre}</h3>
+                    <p className="text-sm text-gray-600 mb-2">Framework: {a.frameworkNombre}</p>
+                    <p className="text-xs text-gray-500">{a.documentos.length} documentos</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nuevo Análisis">
+            <div className="space-y-4">
+              <input
+                type="text"
+                placeholder="Nombre del análisis"
+                className="w-full px-3 py-2 border rounded-lg"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+              />
+              <select value={fwId} onChange={(e) => setFwId(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
+                <option value="">Selecciona framework</option>
+                {frameworks.map(fw => (
+                  <option key={fw.id} value={fw.id}>{fw.nombre}</option>
+                ))}
+              </select>
+              <Button onClick={handleCreate} className="w-full">Crear</Button>
+            </div>
+          </Modal>
+        </div>
+      );
+    }
+
+    function AnalysisDetailPage({ analisis, setAnalisis, frameworks, currentId, setPage }) {
+      const current = analisis.find(a => a.id === currentId);
+      const framework = frameworks.find(f => f.id === current?.frameworkId);
+      const [analyzing, setAnalyzing] = useState(false);
+      const [showEdit, setShowEdit] = useState(false);
+      const [editResp, setEditResp] = useState(null);
+      const [finalText, setFinalText] = useState('');
+      const [showPendingModal, setShowPendingModal] = useState(false);
+      const [pendingItems, setPendingItems] = useState([]);
+
+      if (!current || !framework) return <div>Cargando...</div>;
+
+      const handleUploadDocs = (e) => {
+        const files = Array.from(e.target.files || []);
+        const newDocs = files.map(f => ({
+          id: `doc-${Date.now()}-${Math.random()}`,
+          nombre: f.name,
+          uploadedAt: new Date()
+        }));
+        updateAnalisis({ ...current, documentos: [...current.documentos, ...newDocs] });
+      };
+
+      const updateAnalisis = (updated) => {
+        setAnalisis(analisis.map(a => a.id === currentId ? updated : a));
+      };
+
+      const analyzeIndicacion = async (catId, elemId, indId, indTexto) => {
+        if (current.documentos.length === 0) return alert('Sube documentos primero');
+        setAnalyzing(true);
+        const result = await analyzeWithMistral(indTexto, current.documentos);
+        const existingIdx = current.respuestas.findIndex(r => r.indicacionId === indId);
+        let newRespuestas = [...current.respuestas];
+        const newResp = {
+          id: `resp-${Date.now()}`,
+          categoriaId: catId,
+          elementoId: elemId,
+          indicacionId: indId,
+          propuestaIA: result.propuestaRespuesta,
+          respuestaFinal: '',
+          gaps: result.gapsDetectados,
+          status: 'completado'
+        };
+        if (existingIdx >= 0) newRespuestas[existingIdx] = newResp;
+        else newRespuestas.push(newResp);
+        updateAnalisis({ ...current, respuestas: newRespuestas, status: 'en_progreso' });
+        setAnalyzing(false);
+      };
+
+      const handleEdit = (resp) => {
+        setEditResp(resp);
+        setFinalText(resp.respuestaFinal || resp.propuestaIA);
+        setShowEdit(true);
+      };
+
+      const saveEdit = () => {
+        const newRespuestas = current.respuestas.map(r =>
+          r.id === editResp.id ? { ...r, respuestaFinal: finalText, status: 'revisado' } : r
+        );
+        updateAnalisis({ ...current, respuestas: newRespuestas });
+        setShowEdit(false);
+      };
+
+      const generateGlobal = async () => {
+        if (current.respuestas.length === 0) return alert('Completa algunas respuestas primero');
+        try {
+          console.log('Generando análisis global...');
+          const result = await globalAnalysis(current.respuestas, framework);
+          console.log('Resultado:', result);
+          updateAnalisis({ ...current, fortalezas: result.fortalezas, debilidades: result.debilidades, status: 'completado' });
+          alert('Análisis global generado correctamente');
+        } catch (error) {
+          console.error('Error en análisis global:', error);
+          alert('Error al generar análisis global: ' + error.message);
+        }
+      };
+
+      const handleExport = async () => {
+        try {
+          console.log('Exportando a Word...');
+          await exportToWord(current, framework);
+          console.log('Exportación completada');
+        } catch (error) {
+          console.error('Error exportando:', error);
+          alert('Error al exportar: ' + error.message);
+        }
+      };
+
+      const showPendingItems = () => {
+        const pending = [];
+        
+        framework.categorias.forEach(cat => {
+          cat.elementos.forEach(elem => {
+            elem.indicaciones.forEach(ind => {
+              const resp = current.respuestas.find(r => r.indicacionId === ind.id);
+              const isPendiente = !resp || 
+                                 (resp.gaps && resp.gaps.length > 0) || 
+                                 resp.status !== 'revisado';
+              
+              if (isPendiente) {
+                pending.push({
+                  categoria: cat.nombre,
+                  elemento: elem.nombre,
+                  indicacion: ind.texto,
+                  respuesta: resp,
+                  motivo: !resp ? 'Sin analizar' : 
+                         (resp.gaps && resp.gaps.length > 0) ? 'Gaps detectados' : 
+                         'Requiere revisión'
+                });
+              }
+            });
+          });
+        });
+        
+        setPendingItems(pending);
+        setShowPendingModal(true);
+      };
+
+      const handleExportPending = async () => {
+        try {
+          console.log('Exportando reporte de pendientes...');
+          await exportPendingItemsReport(current, framework);
+          console.log('Exportación completada');
+        } catch (error) {
+          console.error('Error exportando pendientes:', error);
+          alert('Error al exportar pendientes: ' + error.message);
+        }
+      };
+
+      const getRespuesta = (catId, elemId, indId) => {
+        return current.respuestas.find(r => r.categoriaId === catId && r.elementoId === elemId && r.indicacionId === indId);
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-50">
+          <div className="bg-white border-b sticky top-0 z-10">
+            <div className="max-w-7xl mx-auto px-4 py-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  <Button variant="ghost" size="sm" onClick={() => setPage('analysis')}>
+                    <ArrowLeftIcon className="w-4 h-4 mr-2" /> Volver
+                  </Button>
+                  <div>
+                    <h1 className="text-2xl font-bold">{current.nombre}</h1>
+                    <p className="text-sm text-gray-600">Framework: {framework.nombre}</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="secondary" onClick={showPendingItems}>
+                    📋 Puntos Pendientes
+                  </Button>
+                  <Button variant="secondary" onClick={generateGlobal}>Análisis Global</Button>
+                  <Button variant="secondary" onClick={handleExport}>
+                    <DownloadIcon className="w-4 h-4 mr-2" /> Exportar
+                  </Button>
+                </div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-medium">Documentos ({current.documentos.length})</h3>
+                  <label className="inline-block">
+                    <input type="file" multiple onChange={handleUploadDocs} className="hidden" />
+                    <span className="inline-flex items-center px-4 py-2 text-base bg-white text-gray-900 border border-gray-200 hover:bg-gray-50 rounded-lg font-medium transition-all cursor-pointer">
+                      Subir
+                    </span>
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {current.documentos.map(doc => (
+                    <div key={doc.id} className="bg-white px-3 py-2 rounded-lg border flex items-center gap-2">
+                      <FileTextIcon className="w-4 h-4 text-gray-500" />
+                      <span className="text-sm">{doc.nombre}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+            {framework.categorias.map(cat => (
+              <div key={cat.id} className="bg-white rounded-lg border overflow-hidden">
+                <div className="bg-gray-50 px-6 py-4 border-b">
+                  <h2 className="text-lg font-semibold">{cat.nombre}</h2>
+                </div>
+                <div className="p-6 space-y-6">
+                  {cat.elementos.map(elem => (
+                    <div key={elem.id} className="border-l-2 border-gray-200 pl-4">
+                      <h3 className="text-base font-medium mb-3">{elem.nombre}</h3>
+                      <div className="space-y-3">
+                        {elem.indicaciones.map(ind => {
+                          const resp = getRespuesta(cat.id, elem.id, ind.id);
+                          return (
+                            <div key={ind.id} className="bg-gray-50 rounded-lg p-4 border">
+                              <div className="flex items-start justify-between gap-4 mb-3">
+                                <p className="text-sm flex-1"><span className="font-medium">Indicación:</span> {ind.texto}</p>
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => analyzeIndicacion(cat.id, elem.id, ind.id, ind.texto)}
+                                    disabled={analyzing}
+                                  >
+                                    <RefreshCwIcon className="w-3.5 h-3.5" />
+                                  </Button>
+                                  {resp && (
+                                    <Button variant="secondary" size="sm" onClick={() => handleEdit(resp)}>
+                                      <EditIcon className="w-3.5 h-3.5 mr-1" /> Editar
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                              {resp ? (
+                                <div className="space-y-2">
+                                  <div className="bg-white rounded p-3 border">
+                                    <p className="text-xs font-medium text-gray-500 mb-1">
+                                      {resp.respuestaFinal ? 'Respuesta Final:' : 'Propuesta IA:'}
+                                    </p>
+                                    <p className="text-sm">{resp.respuestaFinal || resp.propuestaIA}</p>
+                                  </div>
+                                  {resp.gaps.length > 0 && (
+                                    <div className="bg-red-50 rounded p-3 border border-red-200">
+                                      <p className="text-xs font-medium text-red-700 mb-2 flex items-center gap-1">
+                                        <AlertCircleIcon className="w-3.5 h-3.5" /> Gaps:
+                                      </p>
+                                      <ul className="text-sm text-red-800 space-y-1">
+                                        {resp.gaps.map((gap, i) => <li key={i}>• {gap}</li>)}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  {resp.status === 'revisado' && (
+                                    <div className="flex items-center gap-1 text-xs text-green-600">
+                                      <CheckCircleIcon className="w-3.5 h-3.5" /> Revisado
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="text-sm text-gray-500 italic">Pendiente</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {(current.fortalezas || current.debilidades) && (
+              <div className="bg-white rounded-lg border p-6">
+                <h2 className="text-xl font-semibold mb-6">Análisis Global</h2>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="text-base font-medium text-green-700 mb-3">Fortalezas</h3>
+                    <p className="text-sm whitespace-pre-wrap">{current.fortalezas}</p>
+                  </div>
+                  <div>
+                    <h3 className="text-base font-medium text-red-700 mb-3">Debilidades</h3>
+                    <p className="text-sm whitespace-pre-wrap">{current.debilidades}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <Modal isOpen={showEdit} onClose={() => setShowEdit(false)} title="Editar Respuesta" size="lg">
+            {editResp && (
+              <div className="space-y-4">
+                <div className="bg-gray-50 rounded p-3 border">
+                  <p className="text-xs font-medium text-gray-500 mb-1">Propuesta IA:</p>
+                  <p className="text-sm">{editResp.propuestaIA}</p>
+                </div>
+                <textarea
+                  className="w-full px-3 py-2 border rounded-lg min-h-[200px]"
+                  value={finalText}
+                  onChange={(e) => setFinalText(e.target.value)}
+                  placeholder="Escribe tu respuesta final..."
+                />
+                <div className="flex gap-3">
+                  <Button variant="secondary" onClick={() => setShowEdit(false)} className="flex-1">Cancelar</Button>
+                  <Button onClick={saveEdit} className="flex-1">Guardar</Button>
+                </div>
+              </div>
+            )}
+          </Modal>
+
+          <Modal isOpen={showPendingModal} onClose={() => setShowPendingModal(false)} title="Puntos Pendientes - Guión de Entrevista" size="xl">
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Total de puntos pendientes: {pendingItems.length}</strong>
+                </p>
+                <p className="text-xs text-blue-700 mt-2">
+                  Estos puntos requieren información adicional, tienen gaps detectados o necesitan revisión.
+                </p>
+              </div>
+
+              {pendingItems.length === 0 ? (
+                <div className="text-center py-8">
+                  <CheckCircleIcon className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">¡Todo completo!</h3>
+                  <p className="text-gray-600">No hay puntos pendientes en este análisis.</p>
+                </div>
+              ) : (
+                <div className="space-y-4 max-h-96 overflow-y-auto">
+                  {pendingItems.map((item, idx) => (
+                    <div key={idx} className="border border-gray-200 rounded-lg p-4 bg-white">
+                      <div className="flex items-start gap-3">
+                        <span className="flex-shrink-0 w-8 h-8 bg-gray-900 text-white rounded-full flex items-center justify-center text-sm font-bold">
+                          {idx + 1}
+                        </span>
+                        <div className="flex-1">
+                          <div className="text-xs text-gray-500 mb-1">
+                            {item.categoria} → {item.elemento}
+                          </div>
+                          <p className="text-sm font-medium text-gray-900 mb-2">
+                            {item.indicacion}
+                          </p>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              item.motivo === 'Sin analizar' ? 'bg-gray-100 text-gray-700' :
+                              item.motivo === 'Gaps detectados' ? 'bg-red-100 text-red-700' :
+                              'bg-yellow-100 text-yellow-700'
+                            }`}>
+                              {item.motivo}
+                            </span>
+                          </div>
+                          {item.respuesta && item.respuesta.propuestaIA && (
+                            <div className="bg-gray-50 rounded p-2 mt-2">
+                              <p className="text-xs text-gray-500 mb-1">Información actual:</p>
+                              <p className="text-xs text-gray-700">{item.respuesta.respuestaFinal || item.respuesta.propuestaIA}</p>
+                            </div>
+                          )}
+                          {item.respuesta && item.respuesta.gaps && item.respuesta.gaps.length > 0 && (
+                            <div className="bg-red-50 rounded p-2 mt-2">
+                              <p className="text-xs text-red-700 font-medium mb-1">Gaps:</p>
+                              <ul className="text-xs text-red-800 space-y-1">
+                                {item.respuesta.gaps.map((gap, i) => (
+                                  <li key={i}>• {gap}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4 border-t">
+                <Button variant="secondary" onClick={() => setShowPendingModal(false)} className="flex-1">
+                  Cerrar
+                </Button>
+                {pendingItems.length > 0 && (
+                  <Button onClick={handleExportPending} className="flex-1">
+                    <DownloadIcon className="w-4 h-4 mr-2" /> Exportar Guión Word
+                  </Button>
+                )}
+              </div>
+            </div>
+          </Modal>
+        </div>
+      );
+    }
+
+    // Render
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
