@@ -3,14 +3,548 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gap Analysis Tool - Test</title>
+  <title>Gap Analysis Tool</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/htm@3.1.1/dist/htm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; }
+    .modal-overlay { backdrop-filter: blur(4px); }
+  </style>
 </head>
-<body style="font-family: system-ui; padding: 40px; text-align: center;">
-  <h1>✅ Vercel funciona!</h1>
-  <p>Si ves esto, el deployment está bien.</p>
-  <p>Ahora hay que arreglar el código principal.</p>
-  <script>
-    console.log('Test page loaded');
+<body>
+  <div id="root"></div>
+  <script type="module">
+    const { useState, useEffect } = React;
+    const html = htm.bind(React.createElement);
+    
+    // CONFIGURACIÓN
+    const MISTRAL_API_KEY = 'mAG1EEnyOQjfy5oQ3WPv2wTay0DV9Jhw';
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyDUZR1huz-XHFQBI2CnRGDMxg_f3kFErPA",
+      authDomain: "gapanalysis-8b408.firebaseapp.com",
+      projectId: "gapanalysis-8b408",
+      storageBucket: "gapanalysis-8b408.firebasestorage.app",
+      messagingSenderId: "48683423858",
+      appId: "1:48683423858:web:7ca2267a11f448b2864aeb"
+    };
+
+    const USE_FIREBASE = Boolean(FIREBASE_CONFIG.apiKey);
+    let db = null;
+    
+    if (USE_FIREBASE) {
+      if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+      db = firebase.firestore();
+      console.log('✅ Firestore activo');
+    }
+    
+    // STORAGE
+    const DataStore = {
+      async saveFramework(fw) {
+        if (USE_FIREBASE) {
+          const ref = db.collection('frameworks');
+          if (fw.id) {
+            await ref.doc(fw.id).set(fw);
+            return fw;
+          }
+          const doc = await ref.add(fw);
+          return { ...fw, id: doc.id };
+        }
+        const all = JSON.parse(localStorage.getItem('frameworks') || '[]');
+        if (!fw.id) fw.id = Date.now().toString();
+        const idx = all.findIndex(f => f.id === fw.id);
+        if (idx >= 0) all[idx] = fw;
+        else all.push(fw);
+        localStorage.setItem('frameworks', JSON.stringify(all));
+        return fw;
+      },
+      async getFrameworks() {
+        if (USE_FIREBASE) {
+          const snap = await db.collection('frameworks').get();
+          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        }
+        return JSON.parse(localStorage.getItem('frameworks') || '[]');
+      },
+      async deleteFramework(id) {
+        if (USE_FIREBASE) await db.collection('frameworks').doc(id).delete();
+        else {
+          const all = JSON.parse(localStorage.getItem('frameworks') || '[]');
+          localStorage.setItem('frameworks', JSON.stringify(all.filter(f => f.id !== id)));
+        }
+      },
+      async saveAnalisis(a) {
+        if (USE_FIREBASE) {
+          const ref = db.collection('analisis');
+          if (a.id) {
+            await ref.doc(a.id).set(a);
+            return a;
+          }
+          const doc = await ref.add(a);
+          return { ...a, id: doc.id };
+        }
+        const all = JSON.parse(localStorage.getItem('analisis') || '[]');
+        if (!a.id) a.id = Date.now().toString();
+        const idx = all.findIndex(x => x.id === a.id);
+        if (idx >= 0) all[idx] = a;
+        else all.push(a);
+        localStorage.setItem('analisis', JSON.stringify(all));
+        return a;
+      },
+      async getAnalisis() {
+        if (USE_FIREBASE) {
+          const snap = await db.collection('analisis').orderBy('createdAt', 'desc').get();
+          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        }
+        return JSON.parse(localStorage.getItem('analisis') || '[]');
+      }
+    };
+    
+    // UTILIDADES
+    function parseExcel(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            const categorias = [];
+            let currentCat = null, currentElem = null;
+            rows.slice(1).forEach((row, i) => {
+              const catText = row[0]?.toString().trim();
+              const elemText = row[1]?.toString().trim();
+              const indText = row[2]?.toString().trim();
+              if (catText) {
+                if (currentCat && currentElem) currentCat.elementos.push(currentElem);
+                if (currentCat) categorias.push(currentCat);
+                currentCat = { id: \`cat-\${Date.now()}-\${i}\`, nombre: catText, elementos: [] };
+                currentElem = null;
+              }
+              if (elemText && currentCat) {
+                if (currentElem) currentCat.elementos.push(currentElem);
+                currentElem = { id: \`elem-\${Date.now()}-\${i}\`, nombre: elemText, indicaciones: [] };
+              }
+              if (indText && currentElem) {
+                currentElem.indicaciones.push({ id: \`ind-\${Date.now()}-\${i}\`, texto: indText });
+              }
+            });
+            if (currentCat && currentElem) currentCat.elementos.push(currentElem);
+            if (currentCat) categorias.push(currentCat);
+            resolve({ nombre: file.name.replace(/\.(xlsx|xls)$/, ''), categorias });
+          } catch (error) { reject(error); }
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(file);
+      });
+    }
+    
+    async function analyzeWithMistral(indicacion, documentos) {
+      const docsText = documentos.map(d => \`Documento: \${d.nombre}\`).join('\\n');
+      const prompt = \`Eres un analista experto. Analiza los siguientes documentos en relación con este criterio:
+
+CRITERIO: \${indicacion}
+
+DOCUMENTOS:
+\${docsText}
+
+Responde en JSON:
+{
+  "propuestaRespuesta": "análisis",
+  "gapsDetectados": ["gap1"],
+  "confianza": 0.85
+}\`;
+
+      try {
+        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': \`Bearer \${MISTRAL_API_KEY}\`
+          },
+          body: JSON.stringify({
+            model: 'mistral-small-latest',
+            messages: [{ role: 'user', content: prompt }]
+          })
+        });
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) return JSON.parse(jsonMatch[0]);
+        return { propuestaRespuesta: content, gapsDetectados: [], confianza: 0.5 };
+      } catch (error) {
+        return { propuestaRespuesta: 'Error al analizar', gapsDetectados: [], confianza: 0 };
+      }
+    }
+    
+    // COMPONENTES
+    function Button({ children, variant = 'primary', size = 'md', className = '', onClick, disabled }) {
+      const variants = {
+        primary: 'bg-gray-900 text-white hover:bg-gray-800',
+        secondary: 'bg-white text-gray-900 border border-gray-200 hover:bg-gray-50',
+        ghost: 'bg-transparent text-gray-700 hover:bg-gray-100'
+      };
+      const sizes = { sm: 'px-3 py-1.5 text-sm', md: 'px-4 py-2', lg: 'px-6 py-3 text-lg' };
+      return html\`
+        <button
+          className="\${variants[variant]} \${sizes[size]} \${className} rounded-lg font-medium transition-all \${disabled ? 'opacity-50' : ''}"
+          onClick=\${onClick}
+          disabled=\${disabled}
+        >\${children}</button>
+      \`;
+    }
+    
+    function App() {
+      const [page, setPage] = useState('home');
+      const [frameworks, setFrameworks] = useState([]);
+      const [analisis, setAnalisis] = useState([]);
+      const [currentAnalisis, setCurrentAnalisis] = useState(null);
+      const [loading, setLoading] = useState(true);
+      
+      useEffect(() => {
+        (async () => {
+          const [fw, an] = await Promise.all([DataStore.getFrameworks(), DataStore.getAnalisis()]);
+          setFrameworks(fw);
+          setAnalisis(an);
+          setLoading(false);
+        })();
+      }, []);
+      
+      if (loading) return html\`<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="inline-block w-8 h-8 border-4 border-gray-300 border-t-gray-900 rounded-full animate-spin"></div><p className="mt-4 text-gray-600">Cargando...</p></div></div>\`;
+      
+      if (page === 'frameworks') return html\`<\${FrameworksPage} frameworks=\${frameworks} setFrameworks=\${setFrameworks} setPage=\${setPage} />\`;
+      if (page === 'analysis') return html\`<\${AnalysisPage} analisis=\${analisis} setAnalisis=\${setAnalisis} frameworks=\${frameworks} setPage=\${setPage} setCurrentAnalisis=\${setCurrentAnalisis} />\`;
+      if (page === 'analysis-detail') return html\`<\${AnalysisDetailPage} analisis=\${analisis} setAnalisis=\${setAnalisis} frameworks=\${frameworks} currentId=\${currentAnalisis} setPage=\${setPage} />\`;
+      
+      return html\`
+        <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+          <div className="max-w-6xl mx-auto px-4 py-16">
+            <div className="text-center mb-16">
+              <h1 className="text-5xl font-bold text-gray-900 mb-4">Gap Analysis Tool</h1>
+              <p className="text-xl text-gray-600">Analiza documentos contra frameworks con IA</p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+              <div onClick=\${() => setPage('frameworks')} className="group bg-white rounded-2xl p-8 shadow-sm border hover:shadow-lg cursor-pointer transition-all">
+                <div className="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center group-hover:bg-gray-900 transition-colors mb-6">
+                  <span className="text-2xl group-hover:invert transition-all">📁</span>
+                </div>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-3">Frameworks</h2>
+                <p className="text-gray-600">Gestiona tus plantillas de análisis desde Excel</p>
+              </div>
+              <div onClick=\${() => setPage('analysis')} className="group bg-white rounded-2xl p-8 shadow-sm border hover:shadow-lg cursor-pointer transition-all">
+                <div className="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center group-hover:bg-gray-900 transition-colors mb-6">
+                  <span className="text-2xl group-hover:invert transition-all">📄</span>
+                </div>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-3">Análisis</h2>
+                <p className="text-gray-600">Crea análisis y genera reportes con IA</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      \`;
+    }
+    
+    function FrameworksPage({ frameworks, setFrameworks, setPage }) {
+      const [showModal, setShowModal] = useState(false);
+      const [nombre, setNombre] = useState('');
+      const [uploading, setUploading] = useState(false);
+      
+      const handleUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploading(true);
+        try {
+          const parsed = await parseExcel(file);
+          const fw = { ...parsed, nombre: nombre || parsed.nombre, createdAt: new Date(), updatedAt: new Date() };
+          const saved = await DataStore.saveFramework(fw);
+          setFrameworks([...frameworks, saved]);
+          setShowModal(false);
+          setNombre('');
+        } catch (error) {
+          alert('Error al cargar Excel');
+        } finally {
+          setUploading(false);
+        }
+      };
+      
+      const handleDelete = async (id) => {
+        if (!confirm('¿Eliminar?')) return;
+        await DataStore.deleteFramework(id);
+        setFrameworks(frameworks.filter(f => f.id !== id));
+      };
+      
+      return html\`
+        <div className="min-h-screen bg-gray-50">
+          <div className="bg-white border-b">
+            <div className="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <\${Button} variant="ghost" size="sm" onClick=\${() => setPage('home')}>⬅️ Inicio<//>
+                <h1 className="text-3xl font-bold">Frameworks</h1>
+              </div>
+              <\${Button} onClick=\${() => setShowModal(true)}>➕ Nuevo<//>
+            </div>
+          </div>
+          <div className="max-w-7xl mx-auto px-4 py-8">
+            \${frameworks.length === 0 ? html\`
+              <div className="text-center py-12 bg-white rounded-lg border">
+                <h3 className="text-lg font-medium mb-2">No hay frameworks</h3>
+                <\${Button} onClick=\${() => setShowModal(true)}>Crear Framework<//>
+              </div>
+            \` : html\`
+              <div className="grid md:grid-cols-3 gap-6">
+                \${frameworks.map(fw => html\`
+                  <div key=\${fw.id} className="bg-white rounded-lg border p-6">
+                    <h3 className="text-lg font-semibold mb-2">\${fw.nombre}</h3>
+                    <p className="text-sm text-gray-600 mb-4">\${fw.categorias.length} categorías</p>
+                    <\${Button} variant="ghost" size="sm" onClick=\${() => handleDelete(fw.id)}>🗑️ Eliminar<//>
+                  </div>
+                \`)}
+              </div>
+            \`}
+          </div>
+          \${showModal && html\`
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/40" onClick=\${() => setShowModal(false)}></div>
+              <div className="relative bg-white rounded-lg p-6 w-full max-w-md">
+                <h2 className="text-xl font-medium mb-4">Nuevo Framework</h2>
+                <input
+                  type="text"
+                  placeholder="Nombre"
+                  className="w-full px-3 py-2 border rounded-lg mb-4"
+                  value=\${nombre}
+                  onInput=\${(e) => setNombre(e.target.value)}
+                />
+                <input type="file" accept=".xlsx,.xls" onChange=\${handleUpload} className="w-full mb-4" />
+                \${uploading && html\`<p className="text-sm text-gray-600">Procesando...</p>\`}
+              </div>
+            </div>
+          \`}
+        </div>
+      \`;
+    }
+    
+    function AnalysisPage({ analisis, setAnalisis, frameworks, setPage, setCurrentAnalisis }) {
+      const [showModal, setShowModal] = useState(false);
+      const [nombre, setNombre] = useState('');
+      const [fwId, setFwId] = useState('');
+      
+      const handleCreate = async () => {
+        if (!nombre || !fwId) return alert('Completa campos');
+        const fw = frameworks.find(f => f.id === fwId);
+        const newA = {
+          nombre, frameworkId: fwId, frameworkNombre: fw.nombre,
+          documentos: [], respuestas: [], status: 'borrador', createdAt: new Date()
+        };
+        const saved = await DataStore.saveAnalisis(newA);
+        setCurrentAnalisis(saved.id);
+        setPage('analysis-detail');
+      };
+      
+      return html\`
+        <div className="min-h-screen bg-gray-50">
+          <div className="bg-white border-b">
+            <div className="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <\${Button} variant="ghost" size="sm" onClick=\${() => setPage('home')}>⬅️ Inicio<//>
+                <h1 className="text-3xl font-bold">Análisis</h1>
+              </div>
+              <\${Button} onClick=\${() => setShowModal(true)} disabled=\${frameworks.length === 0}>➕ Nuevo<//>
+            </div>
+          </div>
+          <div className="max-w-7xl mx-auto px-4 py-8">
+            \${analisis.length === 0 ? html\`
+              <div className="text-center py-12 bg-white rounded-lg border">
+                <h3 className="text-lg font-medium mb-2">No hay análisis</h3>
+                <\${Button} onClick=\${() => setShowModal(true)}>Crear Análisis<//>
+              </div>
+            \` : html\`
+              <div className="grid md:grid-cols-3 gap-6">
+                \${analisis.map(a => html\`
+                  <div key=\${a.id} onClick=\${() => { setCurrentAnalisis(a.id); setPage('analysis-detail'); }} className="bg-white rounded-lg border p-6 cursor-pointer hover:shadow">
+                    <h3 className="text-lg font-semibold mb-2">\${a.nombre}</h3>
+                    <p className="text-sm text-gray-600">\${a.frameworkNombre}</p>
+                  </div>
+                \`)}
+              </div>
+            \`}
+          </div>
+          \${showModal && html\`
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/40" onClick=\${() => setShowModal(false)}></div>
+              <div className="relative bg-white rounded-lg p-6 w-full max-w-md">
+                <h2 className="text-xl font-medium mb-4">Nuevo Análisis</h2>
+                <input type="text" placeholder="Nombre" className="w-full px-3 py-2 border rounded-lg mb-4" value=\${nombre} onInput=\${(e) => setNombre(e.target.value)} />
+                <select value=\${fwId} onChange=\${(e) => setFwId(e.target.value)} className="w-full px-3 py-2 border rounded-lg mb-4">
+                  <option value="">Selecciona framework</option>
+                  \${frameworks.map(fw => html\`<option key=\${fw.id} value=\${fw.id}>\${fw.nombre}</option>\`)}
+                </select>
+                <\${Button} onClick=\${handleCreate} className="w-full">Crear<//>
+              </div>
+            </div>
+          \`}
+        </div>
+      \`;
+    }
+    
+    function AnalysisDetailPage({ analisis, setAnalisis, frameworks, currentId, setPage }) {
+      const current = analisis.find(a => a.id === currentId);
+      const framework = frameworks.find(f => f.id === current?.frameworkId);
+      const [analyzing, setAnalyzing] = useState(false);
+      const [showEdit, setShowEdit] = useState(false);
+      const [editResp, setEditResp] = useState(null);
+      const [finalText, setFinalText] = useState('');
+      
+      if (!current || !framework) return html\`<div>Cargando...</div>\`;
+      
+      const updateAnalisis = async (updated) => {
+        await DataStore.saveAnalisis(updated);
+        setAnalisis(analisis.map(a => a.id === currentId ? updated : a));
+      };
+      
+      const handleUploadDocs = (e) => {
+        const files = Array.from(e.target.files || []);
+        const newDocs = files.map(f => ({ id: \`doc-\${Date.now()}-\${Math.random()}\`, nombre: f.name, uploadedAt: new Date() }));
+        updateAnalisis({ ...current, documentos: [...current.documentos, ...newDocs] });
+      };
+      
+      const analyzeIndicacion = async (catId, elemId, indId, indTexto) => {
+        if (current.documentos.length === 0) return alert('Sube documentos');
+        setAnalyzing(true);
+        const result = await analyzeWithMistral(indTexto, current.documentos);
+        const newResp = {
+          id: \`resp-\${Date.now()}\`, categoriaId: catId, elementoId: elemId, indicacionId: indId,
+          propuestaIA: result.propuestaRespuesta, respuestaFinal: '', gaps: result.gapsDetectados, status: 'completado'
+        };
+        const idx = current.respuestas.findIndex(r => r.indicacionId === indId);
+        let newRespuestas = [...current.respuestas];
+        if (idx >= 0) newRespuestas[idx] = newResp;
+        else newRespuestas.push(newResp);
+        await updateAnalisis({ ...current, respuestas: newRespuestas });
+        setAnalyzing(false);
+      };
+      
+      const handleEdit = (resp) => {
+        setEditResp(resp);
+        setFinalText(resp.respuestaFinal || resp.propuestaIA);
+        setShowEdit(true);
+      };
+      
+      const saveEdit = async () => {
+        const newRespuestas = current.respuestas.map(r => r.id === editResp.id ? { ...r, respuestaFinal: finalText, status: 'revisado' } : r);
+        await updateAnalisis({ ...current, respuestas: newRespuestas });
+        setShowEdit(false);
+      };
+      
+      const getRespuesta = (catId, elemId, indId) => current.respuestas.find(r => r.categoriaId === catId && r.elementoId === elemId && r.indicacionId === indId);
+      
+      return html\`
+        <div className="min-h-screen bg-gray-50">
+          <div className="bg-white border-b">
+            <div className="max-w-7xl mx-auto px-4 py-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  <\${Button} variant="ghost" size="sm" onClick=\${() => setPage('analysis')}>⬅️ Volver<//>
+                  <div>
+                    <h1 className="text-2xl font-bold">\${current.nombre}</h1>
+                    <p className="text-sm text-gray-600">\${framework.nombre}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-medium">Documentos (\${current.documentos.length})</h3>
+                  <label className="inline-block">
+                    <input type="file" multiple onChange=\${handleUploadDocs} className="hidden" />
+                    <span className="inline-flex px-4 py-2 bg-white border rounded-lg cursor-pointer hover:bg-gray-50">Subir</span>
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  \${current.documentos.map(doc => html\`<div key=\${doc.id} className="bg-white px-3 py-2 rounded-lg border"><span className="text-sm">\${doc.nombre}</span></div>\`)}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+            \${framework.categorias.map(cat => html\`
+              <div key=\${cat.id} className="bg-white rounded-lg border">
+                <div className="bg-gray-50 px-6 py-4 border-b">
+                  <h2 className="text-lg font-semibold">\${cat.nombre}</h2>
+                </div>
+                <div className="p-6 space-y-6">
+                  \${cat.elementos.map(elem => html\`
+                    <div key=\${elem.id} className="border-l-2 pl-4">
+                      <h3 className="text-base font-medium mb-3">\${elem.nombre}</h3>
+                      <div className="space-y-3">
+                        \${elem.indicaciones.map(ind => {
+                          const resp = getRespuesta(cat.id, elem.id, ind.id);
+                          return html\`
+                            <div key=\${ind.id} className="bg-gray-50 rounded-lg p-4 border">
+                              <div className="flex items-start justify-between gap-4 mb-3">
+                                <p className="text-sm flex-1"><span className="font-medium">Indicación:</span> \${ind.texto}</p>
+                                <div className="flex gap-2">
+                                  <\${Button} variant="ghost" size="sm" onClick=\${() => analyzeIndicacion(cat.id, elem.id, ind.id, ind.texto)} disabled=\${analyzing}>🔄<//>
+                                  \${resp && html\`<\${Button} variant="secondary" size="sm" onClick=\${() => handleEdit(resp)}>✏️ Editar<//>\`}
+                                </div>
+                              </div>
+                              \${resp ? html\`
+                                <div className="space-y-2">
+                                  <div className="bg-white rounded p-3 border">
+                                    <p className="text-xs font-medium text-gray-500 mb-1">\${resp.respuestaFinal ? 'Respuesta Final:' : 'Propuesta IA:'}</p>
+                                    <p className="text-sm">\${resp.respuestaFinal || resp.propuestaIA}</p>
+                                  </div>
+                                  \${resp.gaps?.length > 0 && html\`
+                                    <div className="bg-red-50 rounded p-3 border border-red-200">
+                                      <p className="text-xs font-medium text-red-700 mb-2">⚠️ Gaps:</p>
+                                      <ul className="text-sm text-red-800 space-y-1">
+                                        \${resp.gaps.map((gap, i) => html\`<li key=\${i}>• \${gap}</li>\`)}
+                                      </ul>
+                                    </div>
+                                  \`}
+                                </div>
+                              \` : html\`<p className="text-sm text-gray-500 italic">Pendiente</p>\`}
+                            </div>
+                          \`;
+                        })}
+                      </div>
+                    </div>
+                  \`)}
+                </div>
+              </div>
+            \`)}
+          </div>
+          \${showEdit && html\`
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/40" onClick=\${() => setShowEdit(false)}></div>
+              <div className="relative bg-white rounded-lg p-6 w-full max-w-2xl">
+                <h2 className="text-xl font-medium mb-4">Editar Respuesta</h2>
+                <div className="bg-gray-50 rounded p-3 border mb-4">
+                  <p className="text-xs font-medium text-gray-500 mb-1">Propuesta IA:</p>
+                  <p className="text-sm">\${editResp.propuestaIA}</p>
+                </div>
+                <textarea
+                  className="w-full px-3 py-2 border rounded-lg min-h-[200px] mb-4"
+                  value=\${finalText}
+                  onInput=\${(e) => setFinalText(e.target.value)}
+                  placeholder="Escribe tu respuesta final..."
+                ></textarea>
+                <div className="flex gap-3">
+                  <\${Button} variant="secondary" onClick=\${() => setShowEdit(false)} className="flex-1">Cancelar<//>
+                  <\${Button} onClick=\${saveEdit} className="flex-1">Guardar<//>
+                </div>
+              </div>
+            </div>
+          \`}
+        </div>
+      \`;
+    }
+    
+    ReactDOM.render(React.createElement(App), document.getElementById('root'));
   </script>
 </body>
 </html>
