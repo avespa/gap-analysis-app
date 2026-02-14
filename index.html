@@ -39,10 +39,26 @@
     let db = null;
     
     if (USE_FIREBASE) {
-      if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-      db = firebase.firestore();
-      console.log('✅ Firestore activo');
+      try {
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        db = firebase.firestore();
+        console.log('✅ Firestore activo');
+      } catch (error) {
+        console.error('❌ Error Firebase:', error);
+        console.error('Detalles:', error.message);
+        alert('Error Firebase: ' + error.message + '\n\nRevisa la consola (F12) para más detalles');
+      }
+    } else {
+      console.log('ℹ️ Firebase no configurado - usando localStorage');
     }
+    
+    // Verificar que React está cargado
+    if (typeof React === 'undefined') {
+      console.error('❌ React no cargó');
+      document.body.innerHTML = '<div style="padding:40px;text-align:center;"><h1>Error: React no cargó</h1><p>Revisa tu conexión a internet</p></div>';
+    }
+    
+    console.log('🚀 Aplicación iniciando...');
     
     // STORAGE
     const DataStore = {
@@ -180,6 +196,195 @@ Responde en JSON:
         return { propuestaRespuesta: content, gapsDetectados: [], confianza: 0.5 };
       } catch (error) {
         return { propuestaRespuesta: 'Error al analizar', gapsDetectados: [], confianza: 0 };
+      }
+    }
+    
+    async function globalAnalysis(respuestas, framework) {
+      const respuestasText = respuestas.map((r, i) => {
+        const cat = framework.categorias.find(c => c.id === r.categoriaId);
+        const elem = cat?.elementos.find(e => e.id === r.elementoId);
+        const ind = elem?.indicaciones.find(ind => ind.id === r.indicacionId);
+        return `${i + 1}. ${ind?.texto}\nRespuesta: ${r.respuestaFinal || r.propuestaIA}\nGaps: ${r.gaps.join(', ')}`;
+      }).join('\n\n');
+
+      const prompt = `Analiza estas respuestas y proporciona:
+
+RESPUESTAS:
+${respuestasText}
+
+Responde en JSON:
+{
+  "fortalezas": "análisis de fortalezas",
+  "debilidades": "análisis de debilidades"
+}`;
+
+      try {
+        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${MISTRAL_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: 'mistral-small-latest',
+            messages: [{ role: 'user', content: prompt }]
+          })
+        });
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) return JSON.parse(jsonMatch[0]);
+        return { fortalezas: 'No generado', debilidades: 'No generado' };
+      } catch (error) {
+        return { fortalezas: 'Error', debilidades: 'Error' };
+      }
+    }
+    
+    async function exportToWord(analisis, framework) {
+      try {
+        const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+        const children = [
+          new Paragraph({ text: `Informe: ${analisis.nombre}`, heading: HeadingLevel.TITLE }),
+          new Paragraph({ text: `Framework: ${framework.nombre}`, heading: HeadingLevel.HEADING_2 }),
+          new Paragraph({ text: `Fecha: ${new Date().toLocaleDateString('es-ES')}` }),
+          new Paragraph({ text: '' }),
+          new Paragraph({ text: 'Documentos Revisados', heading: HeadingLevel.HEADING_2 }),
+          ...analisis.documentos.map(d => new Paragraph({ text: `• ${d.nombre}` })),
+          new Paragraph({ text: '' }),
+          new Paragraph({ text: 'Análisis Detallado', heading: HeadingLevel.HEADING_1 })
+        ];
+
+        framework.categorias.forEach(cat => {
+          children.push(new Paragraph({ text: cat.nombre, heading: HeadingLevel.HEADING_2 }));
+          cat.elementos.forEach(elem => {
+            children.push(new Paragraph({ text: elem.nombre, heading: HeadingLevel.HEADING_3 }));
+            elem.indicaciones.forEach(ind => {
+              const resp = analisis.respuestas.find(r => r.indicacionId === ind.id);
+              if (resp) {
+                children.push(
+                  new Paragraph({ children: [new TextRun({ text: 'Indicación: ', bold: true }), new TextRun(ind.texto)] }),
+                  new Paragraph({ children: [new TextRun({ text: 'Respuesta: ', bold: true }), new TextRun(resp.respuestaFinal || resp.propuestaIA)] })
+                );
+                if (resp.gaps?.length > 0) {
+                  children.push(new Paragraph({ children: [new TextRun({ text: 'Gaps: ', bold: true, color: 'FF0000' })] }));
+                  resp.gaps.forEach(gap => children.push(new Paragraph({ text: `  • ${gap}` })));
+                }
+              }
+            });
+          });
+        });
+
+        if (analisis.fortalezas) {
+          children.push(
+            new Paragraph({ text: '' }),
+            new Paragraph({ text: 'Análisis Global', heading: HeadingLevel.HEADING_1 }),
+            new Paragraph({ text: 'Fortalezas', heading: HeadingLevel.HEADING_2 }),
+            new Paragraph({ text: analisis.fortalezas }),
+            new Paragraph({ text: 'Debilidades', heading: HeadingLevel.HEADING_2 }),
+            new Paragraph({ text: analisis.debilidades || '' })
+          );
+        }
+
+        const doc = new Document({ sections: [{ children }] });
+        const blob = await Packer.toBlob(doc);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Analisis_${analisis.nombre.replace(/[^a-z0-9]/gi, '_')}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        alert('Documento descargado');
+      } catch (error) {
+        console.error('Error exportando:', error);
+        alert('Error al exportar: ' + error.message);
+      }
+    }
+    
+    async function exportPendingItemsReport(analisis, framework) {
+      try {
+        const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = docx;
+        const children = [
+          new Paragraph({ text: `Guión de Entrevista - Puntos Pendientes`, heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER }),
+          new Paragraph({ text: `Análisis: ${analisis.nombre}`, heading: HeadingLevel.HEADING_2 }),
+          new Paragraph({ text: `Framework: ${framework.nombre}`, heading: HeadingLevel.HEADING_2 }),
+          new Paragraph({ text: `Fecha: ${new Date().toLocaleDateString('es-ES')}` }),
+          new Paragraph({ text: '' })
+        ];
+
+        let totalPendientes = 0;
+
+        framework.categorias.forEach(cat => {
+          const pendientesCat = [];
+          cat.elementos.forEach(elem => {
+            const pendientesElem = [];
+            elem.indicaciones.forEach(ind => {
+              const resp = analisis.respuestas.find(r => r.indicacionId === ind.id);
+              const isPendiente = !resp || (resp.gaps && resp.gaps.length > 0) || resp.status !== 'revisado';
+              if (isPendiente) {
+                pendientesElem.push({ indicacion: ind, respuesta: resp });
+              }
+            });
+            if (pendientesElem.length > 0) {
+              pendientesCat.push({ elemento: elem, pendientes: pendientesElem });
+            }
+          });
+
+          if (pendientesCat.length > 0) {
+            children.push(new Paragraph({ text: '', spacing: { before: 200 } }));
+            children.push(new Paragraph({ text: cat.nombre, heading: HeadingLevel.HEADING_1 }));
+            pendientesCat.forEach(({ elemento, pendientes }) => {
+              children.push(new Paragraph({ text: elemento.nombre, heading: HeadingLevel.HEADING_2 }));
+              pendientes.forEach(({ indicacion, respuesta }, idx) => {
+                totalPendientes++;
+                children.push(
+                  new Paragraph({ text: '', spacing: { before: 100 } }),
+                  new Paragraph({ children: [new TextRun({ text: `${idx + 1}. `, bold: true }), new TextRun(indicacion.texto)] }),
+                  new Paragraph({ children: [new TextRun({ text: '   Estado: ', bold: true, italics: true }), new TextRun({ text: !respuesta ? 'Sin analizar' : (respuesta.gaps?.length > 0 ? 'Gaps detectados' : 'Requiere revisión'), italics: true, color: 'FF6B6B' })] })
+                );
+                if (respuesta?.propuestaIA) {
+                  children.push(new Paragraph({ children: [new TextRun({ text: '   Información actual: ', bold: true, italics: true }), new TextRun({ text: respuesta.respuestaFinal || respuesta.propuestaIA, italics: true })] }));
+                }
+                if (respuesta?.gaps?.length > 0) {
+                  children.push(new Paragraph({ children: [new TextRun({ text: '   Gaps:', bold: true, color: 'D63031' })] }));
+                  respuesta.gaps.forEach(gap => children.push(new Paragraph({ text: `      • ${gap}`, color: 'D63031' })));
+                }
+                children.push(
+                  new Paragraph({ children: [new TextRun({ text: '   Notas:', bold: true })] }),
+                  new Paragraph({ text: '   _______________________________________________________________________' }),
+                  new Paragraph({ text: '   _______________________________________________________________________' })
+                );
+              });
+            });
+          }
+        });
+
+        children.push(
+          new Paragraph({ text: '', spacing: { before: 400 } }),
+          new Paragraph({ text: 'Resumen', heading: HeadingLevel.HEADING_1 }),
+          new Paragraph({ children: [new TextRun({ text: 'Total pendientes: ', bold: true }), new TextRun({ text: totalPendientes.toString(), bold: true, color: 'FF6B6B' })] })
+        );
+
+        if (totalPendientes === 0) {
+          alert('¡No hay puntos pendientes!');
+          return;
+        }
+
+        const doc = new Document({ sections: [{ children }] });
+        const blob = await Packer.toBlob(doc);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Guion_${analisis.nombre.replace(/[^a-z0-9]/gi, '_')}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        alert(`Guión generado: ${totalPendientes} pendientes`);
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Error al exportar pendientes');
       }
     }
     
@@ -399,6 +604,10 @@ Responde en JSON:
       const [showEdit, setShowEdit] = useState(false);
       const [editResp, setEditResp] = useState(null);
       const [finalText, setFinalText] = useState('');
+      const [showPending, setShowPending] = useState(false);
+      const [pendingItems, setPendingItems] = useState([]);
+      const [exporting, setExporting] = useState(false);
+      const [generatingGlobal, setGeneratingGlobal] = useState(false);
       
       if (!current || !framework) return html\`<div>Cargando...</div>\`;
       
@@ -441,6 +650,58 @@ Responde en JSON:
         setShowEdit(false);
       };
       
+      const handleExport = async () => {
+        setExporting(true);
+        try {
+          await exportToWord(current, framework);
+        } finally {
+          setExporting(false);
+        }
+      };
+      
+      const handleGenerateGlobal = async () => {
+        if (current.respuestas.length === 0) return alert('Completa algunas respuestas primero');
+        setGeneratingGlobal(true);
+        try {
+          const result = await globalAnalysis(current.respuestas, framework);
+          await updateAnalisis({ ...current, fortalezas: result.fortalezas, debilidades: result.debilidades, status: 'completado' });
+          alert('Análisis global generado');
+        } finally {
+          setGeneratingGlobal(false);
+        }
+      };
+      
+      const showPendingItems = () => {
+        const pending = [];
+        framework.categorias.forEach(cat => {
+          cat.elementos.forEach(elem => {
+            elem.indicaciones.forEach(ind => {
+              const resp = current.respuestas.find(r => r.indicacionId === ind.id);
+              const isPendiente = !resp || (resp.gaps && resp.gaps.length > 0) || resp.status !== 'revisado';
+              if (isPendiente) {
+                pending.push({
+                  categoria: cat.nombre,
+                  elemento: elem.nombre,
+                  indicacion: ind.texto,
+                  respuesta: resp,
+                  motivo: !resp ? 'Sin analizar' : (resp.gaps?.length > 0 ? 'Gaps detectados' : 'Requiere revisión')
+                });
+              }
+            });
+          });
+        });
+        setPendingItems(pending);
+        setShowPending(true);
+      };
+      
+      const handleExportPending = async () => {
+        try {
+          await exportPendingItemsReport(current, framework);
+        } catch (error) {
+          console.error(error);
+        }
+      };
+      
       const getRespuesta = (catId, elemId, indId) => current.respuestas.find(r => r.categoriaId === catId && r.elementoId === elemId && r.indicacionId === indId);
       
       return html\`
@@ -454,6 +715,11 @@ Responde en JSON:
                     <h1 className="text-2xl font-bold">\${current.nombre}</h1>
                     <p className="text-sm text-gray-600">\${framework.nombre}</p>
                   </div>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <\${Button} variant="secondary" size="sm" onClick=\${showPendingItems}>📋 Pendientes<//>
+                  <\${Button} variant="secondary" size="sm" onClick=\${handleGenerateGlobal} disabled=\${generatingGlobal || current.respuestas.length === 0}>\${generatingGlobal ? '⏳' : '📊'} Global<//>
+                  <\${Button} variant="secondary" size="sm" onClick=\${handleExport} disabled=\${exporting}>\${exporting ? '⏳' : '⬇️'} Word<//>
                 </div>
               </div>
               <div className="bg-gray-50 rounded-lg p-4">
@@ -540,11 +806,83 @@ Responde en JSON:
               </div>
             </div>
           \`}
+          \${(current.fortalezas || current.debilidades) && html\`
+            <div className="max-w-7xl mx-auto px-4 pb-8">
+              <div className="bg-white rounded-lg border p-6">
+                <h2 className="text-xl font-semibold mb-6">Análisis Global</h2>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="text-base font-medium text-green-700 mb-3">Fortalezas</h3>
+                    <p className="text-sm whitespace-pre-wrap">\${current.fortalezas}</p>
+                  </div>
+                  <div>
+                    <h3 className="text-base font-medium text-red-700 mb-3">Debilidades</h3>
+                    <p className="text-sm whitespace-pre-wrap">\${current.debilidades}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          \`}
+          \${showPending && html\`
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/40" onClick=\${() => setShowPending(false)}></div>
+              <div className="relative bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] flex flex-col">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-medium">Puntos Pendientes</h2>
+                  <button onClick=\${() => setShowPending(false)} className="p-2 hover:bg-gray-100 rounded">❌</button>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <p className="text-sm text-blue-800"><strong>Total: \${pendingItems.length}</strong></p>
+                </div>
+                \${pendingItems.length === 0 ? html\`
+                  <div className="text-center py-8">
+                    <div className="text-4xl mb-3">✅</div>
+                    <h3 className="text-lg font-medium mb-2">¡Todo completo!</h3>
+                  </div>
+                \` : html\`
+                  <div className="flex-1 overflow-y-auto space-y-4 mb-4">
+                    \${pendingItems.map((item, idx) => html\`
+                      <div key=\${idx} className="border rounded-lg p-4">
+                        <div className="flex gap-3">
+                          <span className="w-8 h-8 bg-gray-900 text-white rounded-full flex items-center justify-center text-sm font-bold">\${idx + 1}</span>
+                          <div className="flex-1">
+                            <div className="text-xs text-gray-500 mb-1">\${item.categoria} → \${item.elemento}</div>
+                            <p className="text-sm font-medium mb-2">\${item.indicacion}</p>
+                            <span className=\`text-xs px-2 py-1 rounded-full \${item.motivo === 'Sin analizar' ? 'bg-gray-100' : item.motivo === 'Gaps detectados' ? 'bg-red-100 text-red-700' : 'bg-yellow-100'}\`>\${item.motivo}</span>
+                          </div>
+                        </div>
+                      </div>
+                    \`)}
+                  </div>
+                  <div className="flex gap-3 pt-4 border-t">
+                    <\${Button} variant="secondary" onClick=\${() => setShowPending(false)} className="flex-1">Cerrar<//>
+                    <\${Button} onClick=\${handleExportPending} className="flex-1">⬇️ Exportar<//>
+                  </div>
+                \`}
+              </div>
+            </div>
+          \`}
         </div>
       \`;
     }
     
-    ReactDOM.render(React.createElement(App), document.getElementById('root'));
+    // Error boundary wrapper
+    try {
+      ReactDOM.render(React.createElement(App), document.getElementById('root'));
+      console.log('✅ App renderizada correctamente');
+    } catch (error) {
+      console.error('❌ Error al renderizar:', error);
+      document.getElementById('root').innerHTML = `
+        <div style="padding:40px;font-family:system-ui;text-align:center;">
+          <h1 style="color:red;">Error al cargar la aplicación</h1>
+          <p><strong>Error:</strong> ${error.message}</p>
+          <p>Abre la consola (F12) para más detalles</p>
+          <button onclick="location.reload()" style="padding:10px 20px;margin-top:20px;cursor:pointer;">
+            Recargar página
+          </button>
+        </div>
+      `;
+    }
   </script>
 </body>
 </html>
