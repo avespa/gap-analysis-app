@@ -11,7 +11,7 @@
   
   <!-- Bibliotecas -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
   
@@ -168,22 +168,36 @@ async function processDocument(file, displayId) {
   const ext = file.name.split('.').pop().toLowerCase();
   let extracted;
   
-  if (ext === 'pdf') {
-    extracted = await extractTextFromPDF(file);
-  } else if (ext === 'docx' || ext === 'doc') {
-    extracted = await extractTextFromWord(file);
-  } else {
-    throw new Error('Formato no soportado. Solo PDF y Word (.docx)');
+  try {
+    if (ext === 'pdf') {
+      extracted = await extractTextFromPDF(file);
+    } else if (ext === 'docx' || ext === 'doc') {
+      extracted = await extractTextFromWord(file);
+    } else {
+      throw new Error('Formato no soportado. Solo PDF y Word (.docx)');
+    }
+    
+    // Validar que se extrajo contenido
+    if (!extracted || !extracted.contenido || extracted.contenido.trim().length < 10) {
+      throw new Error(`No se pudo extraer texto del archivo ${file.name}. Puede estar vacío o dañado.`);
+    }
+    
+    if (!extracted.paginas || extracted.paginas === 0) {
+      throw new Error(`No se pudo determinar el número de páginas de ${file.name}`);
+    }
+    
+    return {
+      displayId,
+      nombre: file.name,
+      contenido: extracted.contenido,
+      paginas: extracted.paginas,
+      tamaño: file.size,
+      uploadedAt: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error procesando documento:', error);
+    throw new Error(`Error en ${file.name}: ${error.message}`);
   }
-  
-  return {
-    displayId,
-    nombre: file.name,
-    contenido: extracted.contenido,
-    paginas: extracted.paginas,
-    tamaño: file.size,
-    uploadedAt: new Date()
-  };
 }
 
 // ============================================================
@@ -434,6 +448,11 @@ FORMATO DE RESPUESTA (devuelve SOLO JSON válido, sin texto adicional):
 
 async function exportToWord(analisis, framework) {
   try {
+    // Verificar que docx esté disponible
+    if (typeof docx === 'undefined') {
+      throw new Error('La librería docx no está cargada. Recarga la página e intenta de nuevo.');
+    }
+    
     const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
     
     const children = [
@@ -720,7 +739,10 @@ function renderAnalysisDetail() {
                     <strong>${doc.displayId}:</strong> ${doc.nombre}
                     <span class="text-gray text-sm">• ${doc.paginas} páginas • ${(doc.tamaño / 1024).toFixed(0)} KB</span>
                   </div>
-                  <button class="btn btn-secondary btn-sm" onclick="viewDocContent('${doc.displayId}')">👁️ Ver</button>
+                  <div class="flex gap-2">
+                    <button class="btn btn-secondary btn-sm" onclick="viewDocContent('${doc.displayId}')">👁️ Ver</button>
+                    <button class="btn btn-secondary btn-sm" onclick="deleteDocument('${doc.displayId}')">🗑️</button>
+                  </div>
                 </div>
               </div>
             `).join('')}
@@ -746,7 +768,7 @@ function renderAnalysisDetail() {
             <div class="flex justify-between items-start gap-2 mb-4">
               <p class="text-sm flex-1"><strong>Indicación:</strong> ${ind.texto}</p>
               <div class="flex gap-2" style="flex-wrap:wrap;">
-                <button class="btn btn-primary btn-sm" onclick="showAnalyzeModal('${cat.id}','${elem.id}','${ind.id}','${ind.texto.replace(/'/g, "\\'")}')">
+                <button class="btn btn-primary btn-sm" data-cat="${cat.id}" data-elem="${elem.id}" data-ind="${ind.id}" data-texto="${ind.texto.replace(/"/g, '&quot;')}" onclick="showAnalyzeModal(this.dataset.cat, this.dataset.elem, this.dataset.ind, this.dataset.texto)">
                   🤖 Analizar con IA
                 </button>
                 ${resp ? `<button class="btn btn-secondary btn-sm" onclick="editResponse('${resp.id}')">✏️ Editar</button>` : ''}
@@ -960,6 +982,7 @@ async function handleUploadDocs(event) {
         <div class="loader"></div>
         <p class="text-center text-gray mt-4">Extrayendo texto de ${files.length} documento(s)...</p>
         <p class="text-center text-sm text-gray" id="progress">0 / ${files.length}</p>
+        <div id="errors" class="mt-4" style="max-height:200px;overflow-y:auto;"></div>
       </div>
     </div>
   `;
@@ -968,20 +991,47 @@ async function handleUploadDocs(event) {
   try {
     const nextId = (analisis.documentos || []).length + 1;
     const processed = [];
+    const errors = [];
     
     for (let i = 0; i < files.length; i++) {
-      document.getElementById('progress').textContent = `${i + 1} / ${files.length}`;
-      const displayId = `D${nextId + i}`;
-      const doc = await processDocument(files[i], displayId);
-      processed.push(doc);
+      const file = files[i];
+      document.getElementById('progress').textContent = `${i + 1} / ${files.length} - ${file.name}`;
+      
+      try {
+        const displayId = `D${nextId + processed.length}`;
+        const doc = await processDocument(file, displayId);
+        processed.push(doc);
+        
+        // Mostrar éxito
+        const errorDiv = document.getElementById('errors');
+        errorDiv.innerHTML += `<p class="text-sm" style="color:#059669;">✅ ${file.name}</p>`;
+      } catch (error) {
+        errors.push({ file: file.name, error: error.message });
+        
+        // Mostrar error
+        const errorDiv = document.getElementById('errors');
+        errorDiv.innerHTML += `<p class="text-sm" style="color:#dc2626;">❌ ${file.name}: ${error.message}</p>`;
+      }
     }
     
-    analisis.documentos = [...(analisis.documentos || []), ...processed];
-    await DataStore.saveAnalisis(analisis);
+    if (processed.length > 0) {
+      analisis.documentos = [...(analisis.documentos || []), ...processed];
+      await DataStore.saveAnalisis(analisis);
+    }
     
-    closeModal();
-    alert(`✅ ${processed.length} documento(s) procesado(s) exitosamente`);
-    render();
+    setTimeout(() => {
+      closeModal();
+      
+      if (processed.length > 0 && errors.length === 0) {
+        alert(`✅ ${processed.length} documento(s) procesado(s) exitosamente`);
+      } else if (processed.length > 0 && errors.length > 0) {
+        alert(`⚠️ Procesados: ${processed.length} exitosos, ${errors.length} fallidos.\n\nVerifica que los PDFs no estén dañados o protegidos.`);
+      } else {
+        alert(`❌ No se pudo procesar ningún documento.\n\nAsegúrate de que los archivos no estén dañados o protegidos con contraseña.`);
+      }
+      
+      render();
+    }, 2000);
   } catch (error) {
     closeModal();
     alert('❌ Error procesando documentos: ' + error.message);
@@ -1035,15 +1085,21 @@ function showAnalyzeModal(catId, elemId, indId, indTexto) {
         </div>
         
         <div class="doc-selector">
-          <label><strong>📑 Selecciona documentos para analizar:</strong></label>
-          <p class="text-xs text-gray mb-2">Solo se enviarán los documentos seleccionados a la IA</p>
-          ${analisis.documentos.map(doc => `
-            <label>
-              <input type="checkbox" class="doc-checkbox" value="${doc.displayId}" 
-                     ${prevSelected.includes(doc.displayId) ? 'checked' : ''}>
-              <span><strong>${doc.displayId}:</strong> ${doc.nombre} (${doc.paginas} págs)</span>
-            </label>
-          `).join('')}
+          <label style="display:block;margin-bottom:1rem;"><strong>📑 Selecciona documentos para analizar:</strong></label>
+          <p class="text-xs text-gray mb-3">Solo se enviarán los documentos seleccionados a la IA</p>
+          <div style="display:grid;gap:0.75rem;">
+            ${analisis.documentos.map(doc => `
+              <label style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;background:white;border:1px solid #e5e7eb;border-radius:0.5rem;cursor:pointer;">
+                <input type="checkbox" class="doc-checkbox" value="${doc.displayId}" 
+                       ${prevSelected.includes(doc.displayId) ? 'checked' : ''}
+                       style="width:20px;height:20px;">
+                <div style="flex:1;">
+                  <div><strong>${doc.displayId}:</strong> ${doc.nombre}</div>
+                  <div class="text-xs text-gray">${doc.paginas} páginas • ${(doc.tamaño/1024).toFixed(0)} KB</div>
+                </div>
+              </label>
+            `).join('')}
+          </div>
         </div>
         
         <div class="flex gap-2">
@@ -1167,6 +1223,19 @@ async function saveEditedResponse(respId) {
   
   await DataStore.saveAnalisis(analisis);
   closeModal();
+  render();
+}
+
+async function deleteDocument(displayId) {
+  if (!confirm(`¿Eliminar documento ${displayId}?\n\n⚠️ ADVERTENCIA: Si hay análisis que referencian este documento, las referencias quedarán rotas.`)) return;
+  
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  
+  // Solo eliminar, NO renumerar para mantener referencias
+  analisis.documentos = analisis.documentos.filter(d => d.displayId !== displayId);
+  
+  await DataStore.saveAnalisis(analisis);
+  alert(`✅ Documento ${displayId} eliminado.\n\nLos IDs de otros documentos se mantienen para preservar referencias.`);
   render();
 }
 
