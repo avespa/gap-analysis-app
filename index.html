@@ -358,7 +358,7 @@ async function analyzeWithMistral(indicacion, documentos, selectedDocs, temperat
     docsText += `CONTENIDO:\n${doc.contenido}\n\n`;
   });
   
-  const prompt = `Eres un auditor experto en cumplimiento normativo. Analiza los documentos proporcionados en relación al siguiente criterio.
+  const prompt = `Eres un analista especializado en evaluación de cumplimiento y control. Tu tarea es analizar documentación en diversos ámbitos: ciberseguridad, gobernanza corporativa, compliance normativo, controles internos, gestión de riesgos, políticas empresariales, y otros marcos de referencia.
 
 CRITERIO A EVALUAR:
 ${indicacion}
@@ -615,14 +615,28 @@ async function exportToWord(analisis, framework) {
     const tableRows = [
       new TableRow({
         children: [
-          new TableCell({ children: [new Paragraph({ text: 'Categoría', bold: true })], shading: { fill: 'F3F4F6' } }),
-          new TableCell({ children: [new Paragraph({ text: 'Confianza (%)', bold: true })], shading: { fill: 'F3F4F6' } })
+          new TableCell({ 
+            children: [new Paragraph({ text: 'Categoría', bold: true, alignment: AlignmentType.CENTER })], 
+            shading: { fill: 'F3F4F6' },
+            width: { size: 70, type: WidthType.PERCENTAGE }
+          }),
+          new TableCell({ 
+            children: [new Paragraph({ text: 'Confianza (%)', bold: true, alignment: AlignmentType.CENTER })], 
+            shading: { fill: 'F3F4F6' },
+            width: { size: 30, type: WidthType.PERCENTAGE }
+          })
         ]
       }),
       ...categoriesData.map(cat => new TableRow({
         children: [
-          new TableCell({ children: [new Paragraph(cat.nombre)] }),
-          new TableCell({ children: [new Paragraph(cat.confianza.toString())] })
+          new TableCell({ 
+            children: [new Paragraph(cat.nombre)],
+            width: { size: 70, type: WidthType.PERCENTAGE }
+          }),
+          new TableCell({ 
+            children: [new Paragraph({ text: cat.confianza.toString(), alignment: AlignmentType.CENTER })],
+            width: { size: 30, type: WidthType.PERCENTAGE }
+          })
         ]
       }))
     ];
@@ -630,7 +644,15 @@ async function exportToWord(analisis, framework) {
     children.push(
       new Table({
         rows: tableRows,
-        width: { size: 100, type: WidthType.PERCENTAGE }
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: {
+          top: { style: BorderStyle.SINGLE, size: 1, color: 'D1D5DB' },
+          bottom: { style: BorderStyle.SINGLE, size: 1, color: 'D1D5DB' },
+          left: { style: BorderStyle.SINGLE, size: 1, color: 'D1D5DB' },
+          right: { style: BorderStyle.SINGLE, size: 1, color: 'D1D5DB' },
+          insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+          insideVertical: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' }
+        }
       }),
       new Paragraph({ text: '' })
     );
@@ -936,15 +958,18 @@ function renderAnalysisDetail() {
     <div class="header">
       <div class="header-content">
         <div>
-          <div class="flex items-center gap-2 mb-4">
-            <button class="btn btn-secondary btn-sm" onclick="navigateTo('analysis')">⬅️ Volver</button>
-            <div>
-              <h1>${analisis.nombre}</h1>
-              <p class="text-gray text-sm">${framework.nombre}</p>
-            </div>
+          <div style="font-size:0.875rem;color:#6b7280;margin-bottom:0.5rem;">
+            <a href="#" onclick="navigateTo('home');return false;" style="color:#2563eb;text-decoration:none;">Inicio</a>
+            <span> / </span>
+            <a href="#" onclick="navigateTo('analysis');return false;" style="color:#2563eb;text-decoration:none;">Análisis</a>
+            <span> / </span>
+            <span style="color:#111827;font-weight:500;">${analisis.nombre}</span>
           </div>
+          <h1>${analisis.nombre}</h1>
+          <p class="text-gray text-sm">${framework.nombre}</p>
         </div>
         <div class="flex gap-2" style="flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="showBatchAnalysisModal()">🚀 Analizar TODAS las pendientes</button>
           <button class="btn btn-secondary btn-sm" onclick="showBibliografia()">📚 Bibliografía</button>
           <button class="btn btn-secondary btn-sm" onclick="showStats()">📊 Estadísticas</button>
           <button class="btn btn-success btn-sm" onclick="exportAnalysis()">⬇️ Exportar Word</button>
@@ -966,6 +991,46 @@ function renderAnalysisDetail() {
             <strong>1.0</strong> = Creativo y variado (diferentes resultados)<br>
             <strong>Recomendado: 0.3</strong> para análisis profesional
           </div>
+        </div>
+      </div>
+      
+      <!-- Filtros y búsqueda -->
+      <div class="card">
+        <div class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:1rem;">
+          <h3 style="margin:0;">🔍 Filtros y Búsqueda</h3>
+          <button class="btn btn-secondary btn-sm" onclick="clearFilters()">🔄 Limpiar filtros</button>
+        </div>
+        
+        <div style="display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));">
+          <div class="form-group" style="margin:0;">
+            <label>Buscar en indicaciones:</label>
+            <input type="text" id="search-text" placeholder="Escribe para buscar..." 
+                   oninput="applyFilters()" style="margin:0;">
+          </div>
+          
+          <div class="form-group" style="margin:0;">
+            <label>Filtrar por estado:</label>
+            <select id="filter-status" onchange="applyFilters()" style="margin:0;">
+              <option value="all">Todas</option>
+              <option value="pending">Solo pendientes</option>
+              <option value="completed">Solo completadas</option>
+              <option value="reviewed">Solo revisadas</option>
+            </select>
+          </div>
+          
+          <div class="form-group" style="margin:0;">
+            <label>Filtrar por confianza:</label>
+            <select id="filter-confidence" onchange="applyFilters()" style="margin:0;">
+              <option value="all">Todas</option>
+              <option value="high">Alta (≥80%)</option>
+              <option value="medium">Media (50-79%)</option>
+              <option value="low">Baja (<50%)</option>
+            </select>
+          </div>
+        </div>
+        
+        <div id="filter-results" class="mt-4 text-sm text-gray" style="display:none;">
+          <!-- Se mostrará aquí el resultado del filtro -->
         </div>
       </div>
       
@@ -1003,7 +1068,22 @@ function renderAnalysisDetail() {
   
   // Indicaciones por categoría
   framework.categorias.forEach(cat => {
-    html += `<div class="card"><h2>${cat.nombre}</h2>`;
+    // Calcular progreso de la categoría
+    const totalIndicacionesCat = cat.elementos.reduce((sum, elem) => sum + elem.indicaciones.length, 0);
+    const completadasCat = (analisis.respuestas || []).filter(r => r.categoriaId === cat.id).length;
+    const progressPercent = totalIndicacionesCat > 0 ? Math.round((completadasCat / totalIndicacionesCat) * 100) : 0;
+    const progressColor = progressPercent === 100 ? '#10b981' : progressPercent >= 50 ? '#f59e0b' : '#6b7280';
+    
+    html += `<div class="card">
+      <div class="flex justify-between items-center mb-4">
+        <h2 style="margin:0;">${cat.nombre}</h2>
+        <div style="text-align:right;">
+          <div class="text-sm text-gray">${completadasCat} / ${totalIndicacionesCat} completadas</div>
+          <div style="width:200px;background:#e5e7eb;height:8px;border-radius:4px;overflow:hidden;margin-top:0.25rem;">
+            <div style="background:${progressColor};height:100%;width:${progressPercent}%;transition:width 0.3s;"></div>
+          </div>
+        </div>
+      </div>`;
     
     cat.elementos.forEach(elem => {
       html += `<div style="margin-top:1.5rem;padding-left:1rem;border-left:2px solid #e5e7eb;"><h3>${elem.nombre}</h3>`;
@@ -1014,14 +1094,20 @@ function renderAnalysisDetail() {
         const selectedDocs = resp?.documentosUsados || allDocs;
         
         html += `
-          <div class="analysis-item">
+          <div class="analysis-item" 
+               data-search-text="${ind.texto.toLowerCase()}" 
+               data-status="${resp ? (resp.respuestaFinal ? 'reviewed' : 'completed') : 'pending'}"
+               data-confidence="${resp ? Math.round((resp.confianza || 0) * 100) : '0'}">
             <div class="flex justify-between items-start gap-2 mb-4">
               <p class="text-sm flex-1"><strong>Indicación:</strong> ${ind.texto}</p>
               <div class="flex gap-2" style="flex-wrap:wrap;">
                 <button class="btn btn-primary btn-sm" data-cat="${cat.id}" data-elem="${elem.id}" data-ind="${ind.id}" data-texto="${ind.texto.replace(/"/g, '&quot;')}" onclick="showAnalyzeModal(this.dataset.cat, this.dataset.elem, this.dataset.ind, this.dataset.texto)">
                   🤖 Analizar con IA
                 </button>
-                ${resp ? `<button class="btn btn-secondary btn-sm" onclick="editResponse('${resp.id}')">✏️ Editar</button>` : ''}
+                ${resp ? `
+                  ${!resp.respuestaFinal ? `<button class="btn btn-success btn-sm" onclick="approveAIResponse('${resp.id}')">✅ Aprobar IA</button>` : ''}
+                  <button class="btn btn-secondary btn-sm" onclick="editResponse('${resp.id}')">✏️ Editar</button>
+                ` : ''}
               </div>
             </div>
         `;
@@ -1049,6 +1135,16 @@ function renderAnalysisDetail() {
               ${resp.documentosUsados && resp.documentosUsados.length > 0 ? `
                 <p class="text-xs text-gray mt-2">📄 Documentos usados: ${resp.documentosUsados.join(', ')}</p>
               ` : ''}
+              
+              ${resp.notas ? `
+                <div style="margin-top:1rem;padding:0.75rem;background:#fef3c7;border:1px solid #fbbf24;border-radius:0.5rem;">
+                  <p class="text-sm" style="font-weight:600;color:#92400e;margin-bottom:0.25rem;">📝 Notas internas:</p>
+                  <p class="text-sm" style="color:#92400e;">${resp.notas}</p>
+                  <button class="btn btn-secondary btn-sm mt-2" onclick="editNotes('${resp.id}')" style="padding:0.25rem 0.5rem;font-size:0.75rem;">✏️ Editar nota</button>
+                </div>
+              ` : `
+                <button class="btn btn-secondary btn-sm mt-3" onclick="addNote('${resp.id}')" style="padding:0.25rem 0.5rem;font-size:0.75rem;">📝 Agregar nota interna</button>
+              `}
             </div>
           `;
           
@@ -1303,6 +1399,14 @@ function showAnalyzeModal(catId, elemId, indId, indTexto) {
   
   const allDocs = analisis.documentos.map(d => d.displayId);
   const resp = (analisis.respuestas || []).find(r => r.indicacionId === indId);
+  
+  // Verificar si ya está revisado
+  if (resp && resp.status === 'revisado') {
+    if (!confirm('⚠️ ATENCIÓN\n\nEsta indicación ya fue revisada manualmente.\n\n¿Deseas re-analizar con IA? Esto sobrescribirá la propuesta de IA anterior (tu respuesta final se mantendrá).')) {
+      return;
+    }
+  }
+  
   const prevSelected = resp?.documentosUsados || allDocs;
   
   // Calcular costo estimado
@@ -1431,6 +1535,14 @@ function editResponse(respId) {
         <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
       </div>
       <div class="modal-body">
+        ${resp.versiones && resp.versiones.length > 0 ? `
+          <div style="margin-bottom:1rem;">
+            <button class="btn btn-secondary btn-sm" onclick="showVersionHistory('${respId}')">
+              📜 Ver historial (${resp.versiones.length} versiones anteriores)
+            </button>
+          </div>
+        ` : ''}
+        
         <div class="form-group">
           <label>Propuesta de la IA:</label>
           <div style="padding:1rem;background:#f9fafb;border-radius:0.5rem;max-height:200px;overflow-y:auto;">
@@ -1466,13 +1578,209 @@ function editResponse(respId) {
 async function saveEditedResponse(respId) {
   const finalText = document.getElementById('edit-response').value;
   const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const resp = analisis.respuestas.find(r => r.id === respId);
   
+  // Guardar versión anterior en historial
+  if (!resp.versiones) resp.versiones = [];
+  
+  if (resp.respuestaFinal || resp.propuestaIA) {
+    resp.versiones.push({
+      fecha: new Date().toISOString(),
+      texto: resp.respuestaFinal || resp.propuestaIA,
+      tipo: resp.respuestaFinal ? 'usuario' : 'ia',
+      autor: resp.respuestaFinal ? 'Usuario' : 'IA'
+    });
+  }
+  
+  // Actualizar respuesta
   analisis.respuestas = analisis.respuestas.map(r => 
-    r.id === respId ? { ...r, respuestaFinal: finalText, status: 'revisado' } : r
+    r.id === respId ? { ...r, respuestaFinal: finalText, status: 'revisado', editadoEn: new Date().toISOString() } : r
   );
   
   await DataStore.saveAnalisis(analisis);
   closeModal();
+  render();
+}
+
+function addNote(respId) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📝 Agregar Nota Interna</h2>
+        <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Nota (no se exportará al Word):</label>
+          <textarea id="note-text" placeholder="Ej: Pendiente de revisar con equipo legal..."></textarea>
+          <p class="text-xs text-gray mt-2">
+            Las notas son para uso interno. Útil para recordatorios, dudas pendientes o TODOs.
+          </p>
+        </div>
+        
+        <div class="flex gap-2">
+          <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+          <button class="btn btn-primary" onclick="saveNote('${respId}')">💾 Guardar Nota</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function editNotes(respId) {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const resp = analisis.respuestas.find(r => r.id === respId);
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>✏️ Editar Nota Interna</h2>
+        <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Nota:</label>
+          <textarea id="note-text">${resp.notas || ''}</textarea>
+        </div>
+        
+        <div class="flex gap-2">
+          <button class="btn btn-secondary" onclick="deleteNote('${respId}')">🗑️ Eliminar nota</button>
+          <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+          <button class="btn btn-primary" onclick="saveNote('${respId}')">💾 Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function saveNote(respId) {
+  const noteText = document.getElementById('note-text').value.trim();
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  
+  analisis.respuestas = analisis.respuestas.map(r => 
+    r.id === respId ? { ...r, notas: noteText } : r
+  );
+  
+  await DataStore.saveAnalisis(analisis);
+  closeModal();
+  render();
+}
+
+async function deleteNote(respId) {
+  if (!confirm('¿Eliminar la nota?')) return;
+  
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  
+  analisis.respuestas = analisis.respuestas.map(r => 
+    r.id === respId ? { ...r, notas: '' } : r
+  );
+  
+  await DataStore.saveAnalisis(analisis);
+  closeModal();
+  render();
+}
+
+function showVersionHistory(respId) {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const resp = analisis.respuestas.find(r => r.id === respId);
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📜 Historial de Versiones</h2>
+        <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
+      </div>
+      <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+        <div style="margin-bottom:1.5rem;padding:1rem;background:#d1fae5;border:1px solid #10b981;border-radius:0.5rem;">
+          <div class="flex justify-between items-center mb-2">
+            <strong style="color:#065f46;">✓ Versión Actual</strong>
+            <span class="text-xs" style="color:#065f46;">
+              ${resp.editadoEn ? new Date(resp.editadoEn).toLocaleString('es-ES') : 'Ahora'}
+            </span>
+          </div>
+          <p class="text-sm" style="color:#065f46;margin-bottom:0.5rem;">
+            ${resp.respuestaFinal || resp.propuestaIA}
+          </p>
+          <span class="badge badge-green">${resp.status === 'revisado' ? 'Usuario (editado)' : 'IA'}</span>
+        </div>
+        
+        ${(resp.versiones || []).reverse().map((ver, idx) => `
+          <div style="margin-bottom:1rem;padding:1rem;background:#f9fafb;border:1px solid #e5e7eb;border-radius:0.5rem;">
+            <div class="flex justify-between items-center mb-2">
+              <strong class="text-sm">Versión ${resp.versiones.length - idx}</strong>
+              <span class="text-xs text-gray">${new Date(ver.fecha).toLocaleString('es-ES')}</span>
+            </div>
+            <p class="text-sm text-gray mb-2">${ver.texto}</p>
+            <div class="flex gap-2 items-center">
+              <span class="badge badge-gray">${ver.autor}</span>
+              <button class="btn btn-secondary btn-sm" onclick="restoreVersion('${respId}', ${resp.versiones.length - idx - 1})" style="padding:0.25rem 0.5rem;font-size:0.75rem;">
+                ↩️ Restaurar esta versión
+              </button>
+            </div>
+          </div>
+        `).join('')}
+        
+        ${!resp.versiones || resp.versiones.length === 0 ? `
+          <p class="text-gray text-center">No hay versiones anteriores</p>
+        ` : ''}
+        
+        <button class="btn btn-secondary mt-4" onclick="closeModal();editResponse('${respId}')">⬅️ Volver a editar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function restoreVersion(respId, versionIndex) {
+  if (!confirm('¿Restaurar esta versión?\n\nLa versión actual se guardará en el historial.')) return;
+  
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const resp = analisis.respuestas.find(r => r.id === respId);
+  
+  const versionToRestore = resp.versiones[versionIndex];
+  
+  // Guardar versión actual en historial
+  resp.versiones.push({
+    fecha: new Date().toISOString(),
+    texto: resp.respuestaFinal || resp.propuestaIA,
+    tipo: resp.respuestaFinal ? 'usuario' : 'ia',
+    autor: resp.respuestaFinal ? 'Usuario' : 'IA'
+  });
+  
+  // Restaurar versión
+  analisis.respuestas = analisis.respuestas.map(r => 
+    r.id === respId ? { 
+      ...r, 
+      respuestaFinal: versionToRestore.texto, 
+      status: 'revisado',
+      editadoEn: new Date().toISOString()
+    } : r
+  );
+  
+  await DataStore.saveAnalisis(analisis);
+  closeModal();
+  render();
+}
+
+async function approveAIResponse(respId) {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const resp = analisis.respuestas.find(r => r.id === respId);
+  
+  if (!confirm('¿Aprobar la propuesta de IA como respuesta final?\n\nPodrás editarla después si es necesario.')) return;
+  
+  analisis.respuestas = analisis.respuestas.map(r => 
+    r.id === respId ? { ...r, respuestaFinal: r.propuestaIA, status: 'revisado' } : r
+  );
+  
+  await DataStore.saveAnalisis(analisis);
   render();
 }
 
@@ -1501,6 +1809,302 @@ async function deleteAnalisis(id) {
   currentData.analisis = currentData.analisis.filter(a => a.id !== id);
   alert('✅ Análisis eliminado');
   render();
+}
+
+function showBatchAnalysisModal() {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const framework = currentData.frameworks.find(f => f.id === analisis.frameworkId);
+  
+  if (!analisis.documentos || analisis.documentos.length === 0) {
+    return alert('⚠️ Primero debes subir documentos para poder analizar');
+  }
+  
+  // Contar pendientes
+  const totalIndicaciones = framework.categorias.reduce((sum, cat) => 
+    sum + cat.elementos.reduce((s, elem) => s + elem.indicaciones.length, 0), 0
+  );
+  const completadas = (analisis.respuestas || []).length;
+  const pendientes = totalIndicaciones - completadas;
+  
+  if (pendientes === 0) {
+    return alert('✅ No hay indicaciones pendientes.\n\nTodas las indicaciones ya han sido analizadas.');
+  }
+  
+  // Calcular estimaciones
+  const avgTokensPerDoc = analisis.documentos.reduce((sum, d) => sum + estimateTokens(d.contenido || ''), 0);
+  const estimatedTokensPerAnalysis = avgTokensPerDoc + 500;
+  const totalTokens = estimatedTokensPerAnalysis * pendientes;
+  const estimatedCost = calculateCost(totalTokens, pendientes * 500);
+  const estimatedMinutes = Math.ceil(pendientes * 0.25); // 15 seg por análisis
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>🚀 Análisis por Lotes</h2>
+        <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
+      </div>
+      <div class="modal-body">
+        <div class="cost-alert" style="background:#fef3c7;border:2px solid #f59e0b;padding:1.5rem;border-radius:0.5rem;margin-bottom:1.5rem;">
+          <h3 style="margin-bottom:1rem;">⚠️ ATENCIÓN: Proceso largo y costoso</h3>
+          
+          <p style="margin-bottom:0.5rem;"><strong>Indicaciones pendientes:</strong> ${pendientes}</p>
+          <p style="margin-bottom:0.5rem;"><strong>Tiempo estimado:</strong> ~${estimatedMinutes} minutos</p>
+          <p style="margin-bottom:0.5rem;"><strong>Tokens estimados:</strong> ~${totalTokens.toLocaleString()}</p>
+          <p style="margin-bottom:1rem;"><strong>Costo estimado:</strong> ${formatCost(estimatedCost.total)}</p>
+          
+          <p style="font-size:0.875rem;color:#92400e;margin-bottom:0.5rem;">
+            • Se analizará automáticamente una indicación cada 15 segundos
+          </p>
+          <p style="font-size:0.875rem;color:#92400e;margin-bottom:0.5rem;">
+            • Puedes pausar o detener el proceso en cualquier momento
+          </p>
+          <p style="font-size:0.875rem;color:#92400e;margin-bottom:0.5rem;">
+            • Se usarán TODOS los documentos subidos para cada análisis
+          </p>
+          <p style="font-size:0.875rem;color:#92400e;">
+            • El progreso se guarda automáticamente
+          </p>
+        </div>
+        
+        <div class="flex gap-2">
+          <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+          <button class="btn btn-primary" onclick="startBatchAnalysis(${pendientes})">
+            🚀 Iniciar Análisis (${formatCost(estimatedCost.total)})
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+let batchAnalysisRunning = false;
+let batchAnalysisPaused = false;
+
+async function startBatchAnalysis(totalPendientes) {
+  closeModal();
+  
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const framework = currentData.frameworks.find(f => f.id === analisis.frameworkId);
+  
+  // Recopilar todas las indicaciones pendientes
+  const pendingItems = [];
+  framework.categorias.forEach(cat => {
+    cat.elementos.forEach(elem => {
+      elem.indicaciones.forEach(ind => {
+        const resp = (analisis.respuestas || []).find(r => r.indicacionId === ind.id);
+        if (!resp) {
+          pendingItems.push({
+            catId: cat.id,
+            catNombre: cat.nombre,
+            elemId: elem.id,
+            elemNombre: elem.nombre,
+            indId: ind.id,
+            indTexto: ind.texto
+          });
+        }
+      });
+    });
+  });
+  
+  batchAnalysisRunning = true;
+  batchAnalysisPaused = false;
+  
+  // Mostrar modal de progreso
+  const progressModal = document.createElement('div');
+  progressModal.className = 'modal-overlay';
+  progressModal.id = 'batch-progress-modal';
+  progressModal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>🤖 Análisis por Lotes en Progreso</h2>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom:1rem;">
+          <p><strong>Progreso:</strong> <span id="batch-current">0</span> / ${pendingItems.length} completadas</p>
+          <div style="background:#e5e7eb;height:20px;border-radius:10px;overflow:hidden;margin:0.5rem 0;">
+            <div id="batch-progress-bar" style="background:#111827;height:100%;width:0%;transition:width 0.3s;"></div>
+          </div>
+          <p style="text-align:center;font-weight:600;" id="batch-percent">0%</p>
+        </div>
+        
+        <div style="background:#f9fafb;padding:1rem;border-radius:0.5rem;margin-bottom:1rem;">
+          <p class="text-sm" id="batch-current-item">Preparando...</p>
+          <p class="text-sm text-gray mt-2" id="batch-next-in">Siguiente análisis en: --</p>
+        </div>
+        
+        <div class="flex gap-2">
+          <button class="btn btn-secondary" id="batch-pause-btn" onclick="toggleBatchPause()">⏸️ Pausar</button>
+          <button class="btn btn-secondary" onclick="stopBatchAnalysis()">⏹️ Detener</button>
+        </div>
+        
+        <p class="text-xs text-gray mt-4">💡 Puedes cerrar esta ventana, el proceso continuará en segundo plano</p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(progressModal);
+  
+  // Procesar cada indicación
+  for (let i = 0; i < pendingItems.length && batchAnalysisRunning; i++) {
+    const item = pendingItems[i];
+    
+    // Actualizar UI
+    document.getElementById('batch-current').textContent = i;
+    document.getElementById('batch-current-item').textContent = `Analizando: ${item.catNombre} > ${item.elemNombre}`;
+    const percent = Math.round((i / pendingItems.length) * 100);
+    document.getElementById('batch-percent').textContent = `${percent}%`;
+    document.getElementById('batch-progress-bar').style.width = `${percent}%`;
+    
+    // Esperar si está pausado
+    while (batchAnalysisPaused && batchAnalysisRunning) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    if (!batchAnalysisRunning) break;
+    
+    try {
+      // Analizar
+      const allDocs = analisis.documentos.map(d => d.displayId);
+      const result = await analyzeWithMistral(item.indTexto, analisis.documentos, allDocs, analisis.temperature);
+      
+      const newResp = {
+        id: `resp-${Date.now()}-${i}`,
+        categoriaId: item.catId,
+        elementoId: item.elemId,
+        indicacionId: item.indId,
+        propuestaIA: result.propuestaRespuesta,
+        respuestaFinal: '',
+        gaps: result.gapsDetectados,
+        referencias: result.referencias,
+        confianza: result.confianza,
+        documentosUsados: allDocs,
+        tokensUsados: result.tokensUsados,
+        costo: result.costo,
+        status: 'completado',
+        analyzedAt: new Date()
+      };
+      
+      if (!analisis.respuestas) analisis.respuestas = [];
+      analisis.respuestas.push(newResp);
+      await DataStore.saveAnalisis(analisis);
+      
+    } catch (error) {
+      console.error(`Error analizando ${item.indTexto}:`, error);
+      // Continuar con la siguiente
+    }
+    
+    // Delay de 15 segundos entre análisis (evitar rate limit)
+    if (i < pendingItems.length - 1 && batchAnalysisRunning) {
+      for (let sec = 15; sec > 0 && batchAnalysisRunning && !batchAnalysisPaused; sec--) {
+        document.getElementById('batch-next-in').textContent = `Siguiente análisis en: ${sec} segundos`;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+  
+  // Finalizar
+  batchAnalysisRunning = false;
+  document.getElementById('batch-current').textContent = pendingItems.length;
+  document.getElementById('batch-percent').textContent = '100%';
+  document.getElementById('batch-progress-bar').style.width = '100%';
+  document.getElementById('batch-current-item').textContent = '✅ Análisis completado';
+  document.getElementById('batch-next-in').textContent = '';
+  document.getElementById('batch-pause-btn').style.display = 'none';
+  
+  setTimeout(() => {
+    closeModal();
+    alert(`✅ Análisis por lotes completado\n\n${pendingItems.length} indicaciones analizadas`);
+    render();
+  }, 2000);
+}
+
+function toggleBatchPause() {
+  batchAnalysisPaused = !batchAnalysisPaused;
+  const btn = document.getElementById('batch-pause-btn');
+  if (batchAnalysisPaused) {
+    btn.innerHTML = '▶️ Reanudar';
+    document.getElementById('batch-next-in').textContent = 'Pausado...';
+  } else {
+    btn.innerHTML = '⏸️ Pausar';
+  }
+}
+
+function stopBatchAnalysis() {
+  if (confirm('¿Detener el análisis por lotes?\n\nEl progreso actual se ha guardado.')) {
+    batchAnalysisRunning = false;
+    closeModal();
+    render();
+  }
+}
+
+function applyFilters() {
+  const searchText = document.getElementById('search-text')?.value.toLowerCase() || '';
+  const filterStatus = document.getElementById('filter-status')?.value || 'all';
+  const filterConfidence = document.getElementById('filter-confidence')?.value || 'all';
+  
+  const items = document.querySelectorAll('.analysis-item');
+  let visibleCount = 0;
+  let totalCount = items.length;
+  
+  items.forEach(item => {
+    let show = true;
+    
+    // Filtro de búsqueda
+    if (searchText && !item.dataset.searchText.includes(searchText)) {
+      show = false;
+    }
+    
+    // Filtro de estado
+    if (filterStatus !== 'all' && item.dataset.status !== filterStatus) {
+      show = false;
+    }
+    
+    // Filtro de confianza
+    if (filterConfidence !== 'all') {
+      const conf = parseInt(item.dataset.confidence);
+      if (filterConfidence === 'high' && conf < 80) show = false;
+      if (filterConfidence === 'medium' && (conf < 50 || conf >= 80)) show = false;
+      if (filterConfidence === 'low' && conf >= 50) show = false;
+    }
+    
+    // Mostrar/ocultar elemento y su contenedor padre
+    if (show) {
+      item.style.display = '';
+      visibleCount++;
+    } else {
+      item.style.display = 'none';
+    }
+  });
+  
+  // Ocultar categorías vacías
+  document.querySelectorAll('.card').forEach(card => {
+    const visibleItems = Array.from(card.querySelectorAll('.analysis-item')).filter(item => item.style.display !== 'none');
+    if (visibleItems.length === 0 && card.querySelector('.analysis-item')) {
+      card.style.display = 'none';
+    } else if (card.querySelector('.analysis-item')) {
+      card.style.display = '';
+    }
+  });
+  
+  // Mostrar resultado
+  const resultsDiv = document.getElementById('filter-results');
+  if (resultsDiv) {
+    if (searchText || filterStatus !== 'all' || filterConfidence !== 'all') {
+      resultsDiv.style.display = 'block';
+      resultsDiv.innerHTML = `📊 Mostrando <strong>${visibleCount}</strong> de <strong>${totalCount}</strong> indicaciones`;
+    } else {
+      resultsDiv.style.display = 'none';
+    }
+  }
+}
+
+function clearFilters() {
+  document.getElementById('search-text').value = '';
+  document.getElementById('filter-status').value = 'all';
+  document.getElementById('filter-confidence').value = 'all';
+  applyFilters();
 }
 
 
@@ -1684,3 +2288,4 @@ if (document.readyState === 'complete') init();
   </script>
 </body>
 </html>
+
