@@ -3,60 +3,1351 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gap Analysis Tool</title>
+  <title>Gap Analysis Tool - Professional</title>
+  
+  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  
+  <!-- Bibliotecas -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+  
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(to bottom, #f9fafb, #fff); min-height: 100vh; }
     .container { max-width: 1400px; margin: 0 auto; padding: 1rem; }
-    .header { background: white; border-bottom: 1px solid #e5e7eb; padding: 1.5rem 0; margin-bottom: 2rem; }
+    .header { background: white; border-bottom: 1px solid #e5e7eb; padding: 1.5rem 0; margin-bottom: 2rem; position: sticky; top: 0; z-index: 40; }
     .header-content { max-width: 1400px; margin: 0 auto; padding: 0 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
     h1 { font-size: 2rem; font-weight: 700; color: #111827; }
     h2 { font-size: 1.5rem; font-weight: 600; color: #111827; margin-bottom: 1rem; }
     h3 { font-size: 1.25rem; font-weight: 600; color: #111827; margin-bottom: 0.5rem; }
-    .btn { padding: 0.75rem 1.5rem; border: none; border-radius: 0.5rem; font-weight: 500; cursor: pointer; transition: all 0.2s; font-size: 1rem; display: inline-flex; align-items: center; gap: 0.5rem; }
+    .btn { padding: 0.75rem 1.5rem; border: none; border-radius: 0.5rem; font-weight: 500; cursor: pointer; transition: all 0.2s; font-size: 1rem; display: inline-flex; align-items: center; gap: 0.5rem; font-family: inherit; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: #111827; color: white; }
     .btn-primary:hover:not(:disabled) { background: #1f2937; }
     .btn-secondary { background: white; color: #111827; border: 1px solid #d1d5db; }
     .btn-secondary:hover:not(:disabled) { background: #f9fafb; }
     .btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
+    .btn-success { background: #059669; color: white; }
+    .btn-success:hover:not(:disabled) { background: #047857; }
     .card { background: white; border-radius: 1rem; padding: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; margin-bottom: 1.5rem; }
-    .card:hover { box-shadow: 0 4px 6px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s; }
+    .card:hover { box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.2s; }
+    .card.clickable { cursor: pointer; }
     .grid { display: grid; gap: 2rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 50; }
-    .modal { background: white; border-radius: 0.75rem; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+    .modal { background: white; border-radius: 0.75rem; max-width: 800px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
     .modal-header { padding: 1.5rem; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
     .modal-body { padding: 1.5rem; }
     .form-group { margin-bottom: 1rem; }
     label { display: block; font-weight: 500; margin-bottom: 0.5rem; color: #374151; }
-    input[type="text"], input[type="file"], select, textarea { width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.5rem; font-size: 1rem; font-family: inherit; }
+    input[type="text"], input[type="file"], input[type="range"], select, textarea { width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.5rem; font-size: 1rem; font-family: inherit; }
     textarea { min-height: 150px; resize: vertical; }
-    .hidden { display: none; }
+    select[multiple] { min-height: 120px; }
+    .hidden { display: none !important; }
     .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem; font-weight: 500; }
     .badge-gray { background: #f3f4f6; color: #374151; }
+    .badge-green { background: #d1fae5; color: #065f46; }
+    .badge-yellow { background: #fef3c7; color: #92400e; }
+    .badge-red { background: #fee2e2; color: #991b1b; }
     .loader { border: 3px solid #f3f4f6; border-top: 3px solid #111827; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 2rem auto; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     .analysis-item { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1rem; margin-bottom: 0.75rem; }
     .gap-item { background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; padding: 0.75rem; margin-top: 0.5rem; }
+    .confidence-bar { height: 8px; background: #e5e7eb; border-radius: 9999px; overflow: hidden; margin-top: 0.5rem; }
+    .confidence-fill { height: 100%; transition: width 0.3s; }
+    .confidence-high { background: #10b981; }
+    .confidence-medium { background: #f59e0b; }
+    .confidence-low { background: #ef4444; }
+    .temperature-display { text-align: center; font-size: 1.5rem; font-weight: 700; color: #111827; margin: 0.5rem 0; }
+    .temperature-label { text-align: center; font-size: 0.875rem; color: #6b7280; margin-bottom: 1rem; }
+    .doc-selector { background: #f9fafb; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; }
+    .doc-selector label { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; cursor: pointer; }
+    .doc-selector input[type="checkbox"] { width: auto; cursor: pointer; }
+    .reference { color: #2563eb; font-weight: 600; background: #dbeafe; padding: 0.125rem 0.375rem; border-radius: 0.25rem; }
+    .cost-alert { background: #fef3c7; border: 2px solid #f59e0b; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; }
+    .biblio-item { padding: 1rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; margin-bottom: 0.5rem; }
     .icon { font-size: 1.5rem; }
     .text-gray { color: #6b7280; }
     .text-sm { font-size: 0.875rem; }
+    .text-xs { font-size: 0.75rem; }
     .mb-4 { margin-bottom: 1rem; }
     .mt-4 { margin-top: 1rem; }
     .flex { display: flex; }
     .gap-2 { gap: 0.5rem; }
     .items-center { align-items: center; }
     .justify-between { justify-content: space-between; }
+    .processing { opacity: 0.6; pointer-events: none; }
   </style>
 </head>
 <body>
   <div id="app"></div>
+  
   <script>
-const CONFIG={mistralApiKey:'mAG1EEnyOQjfy5oQ3WPv2wTay0DV9Jhw',firebase:{apiKey:"AIzaSyDUZR1huz-XHFQBI2CnRGDMxg_f3kFErPA",authDomain:"gapanalysis-8b408.firebaseapp.com",projectId:"gapanalysis-8b408",storageBucket:"gapanalysis-8b408.firebasestorage.app",messagingSenderId:"48683423858",appId:"1:48683423858:web:7ca2267a11f448b2864aeb"}};let db=null,currentPage='home',currentData={frameworks:[],analisis:[],currentAnalisisId:null};try{firebase.initializeApp(CONFIG.firebase);db=firebase.firestore();console.log('✅ Firestore activo')}catch(error){console.error('❌ Error Firebase:',error);alert('Error Firebase: '+error.message)}const DataStore={async saveFramework(fw){if(db){const ref=db.collection('frameworks');if(fw.id){await ref.doc(fw.id).set(fw);return fw}else{const doc=await ref.add(fw);return{...fw,id:doc.id}}}else{const all=JSON.parse(localStorage.getItem('frameworks')||'[]');if(!fw.id)fw.id=Date.now().toString();const idx=all.findIndex(f=>f.id===fw.id);if(idx>=0)all[idx]=fw;else all.push(fw);localStorage.setItem('frameworks',JSON.stringify(all));return fw}},async getFrameworks(){if(db){const snap=await db.collection('frameworks').get();return snap.docs.map(d=>({id:d.id,...d.data()}))}else{return JSON.parse(localStorage.getItem('frameworks')||'[]')}},async deleteFramework(id){if(db){await db.collection('frameworks').doc(id).delete()}else{const all=JSON.parse(localStorage.getItem('frameworks')||'[]');localStorage.setItem('frameworks',JSON.stringify(all.filter(f=>f.id!==id)))}},async saveAnalisis(a){if(db){const ref=db.collection('analisis');if(a.id){await ref.doc(a.id).set(a);return a}else{const doc=await ref.add(a);return{...a,id:doc.id}}}else{const all=JSON.parse(localStorage.getItem('analisis')||'[]');if(!a.id)a.id=Date.now().toString();const idx=all.findIndex(x=>x.id===a.id);if(idx>=0)all[idx]=a;else all.push(a);localStorage.setItem('analisis',JSON.stringify(all));return a}},async getAnalisis(){if(db){const snap=await db.collection('analisis').get();return snap.docs.map(d=>({id:d.id,...d.data()}))}else{return JSON.parse(localStorage.getItem('analisis')||'[]')}}};function parseExcel(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=(e)=>{try{const data=new Uint8Array(e.target.result);const workbook=XLSX.read(data,{type:'array'});const sheet=workbook.Sheets[workbook.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(sheet,{header:1});const categorias=[];let currentCat=null,currentElem=null;rows.slice(1).forEach((row,i)=>{const catText=row[0]?.toString().trim();const elemText=row[1]?.toString().trim();const indText=row[2]?.toString().trim();if(catText){if(currentCat&&currentElem)currentCat.elementos.push(currentElem);if(currentCat)categorias.push(currentCat);currentCat={id:'cat-'+Date.now()+'-'+i,nombre:catText,elementos:[]};currentElem=null}if(elemText&&currentCat){if(currentElem)currentCat.elementos.push(currentElem);currentElem={id:'elem-'+Date.now()+'-'+i,nombre:elemText,indicaciones:[]}}if(indText&&currentElem){currentElem.indicaciones.push({id:'ind-'+Date.now()+'-'+i,texto:indText})}});if(currentCat&&currentElem)currentCat.elementos.push(currentElem);if(currentCat)categorias.push(currentCat);resolve({nombre:file.name.replace(/\.(xlsx|xls)$/,''),categorias})}catch(error){reject(error)}};reader.onerror=()=>reject(reader.error);reader.readAsArrayBuffer(file)})}async function analyzeWithMistral(indicacion,documentos){const docsText=documentos.map(d=>'Documento: '+d.nombre).join('\n');const prompt='Eres un analista experto. Analiza:\n\nCRITERIO: '+indicacion+'\n\nDOCUMENTOS:\n'+docsText+'\n\nResponde SOLO con este formato JSON sin nada más:\n{\n"propuestaRespuesta":"tu análisis aquí",\n"gapsDetectados":["gap1","gap2"],\n"confianza":0.85\n}';try{const response=await fetch('https://api.mistral.ai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+CONFIG.mistralApiKey},body:JSON.stringify({model:'mistral-small-latest',messages:[{role:'user',content:prompt}]})});const data=await response.json();const content=data.choices?.[0]?.message?.content||'';console.log('Mistral response:',content);const jsonMatch=content.match(/\{[\s\S]*\}/);if(jsonMatch){const parsed=JSON.parse(jsonMatch[0]);return{propuestaRespuesta:parsed.propuestaRespuesta||'Análisis completado',gapsDetectados:Array.isArray(parsed.gapsDetectados)?parsed.gapsDetectados:[],confianza:parsed.confianza||0.5}}return{propuestaRespuesta:content||'Sin respuesta',gapsDetectados:[],confianza:0.5}}catch(error){console.error('Mistral error:',error);return{propuestaRespuesta:'Error al analizar: '+error.message,gapsDetectados:[],confianza:0}}}async function exportToWord(analisis,framework){try{const{Document,Packer,Paragraph,TextRun,HeadingLevel}=docx;const children=[new Paragraph({text:'Informe: '+analisis.nombre,heading:HeadingLevel.TITLE}),new Paragraph({text:'Framework: '+framework.nombre,heading:HeadingLevel.HEADING_2}),new Paragraph({text:'Fecha: '+new Date().toLocaleDateString('es-ES')}),new Paragraph({text:''})];framework.categorias.forEach(cat=>{children.push(new Paragraph({text:cat.nombre,heading:HeadingLevel.HEADING_2}));cat.elementos.forEach(elem=>{children.push(new Paragraph({text:elem.nombre,heading:HeadingLevel.HEADING_3}));elem.indicaciones.forEach(ind=>{const resp=analisis.respuestas.find(r=>r.indicacionId===ind.id);if(resp){children.push(new Paragraph({children:[new TextRun({text:'Indicación: ',bold:true}),new TextRun(ind.texto)]}),new Paragraph({children:[new TextRun({text:'Respuesta: ',bold:true}),new TextRun(resp.respuestaFinal||resp.propuestaIA)]}));if(resp.gaps?.length>0){children.push(new Paragraph({children:[new TextRun({text:'Gaps: ',bold:true,color:'FF0000'})]}));resp.gaps.forEach(gap=>children.push(new Paragraph({text:'  • '+gap})))}}})})});const doc=new Document({sections:[{children}]});const blob=await Packer.toBlob(doc);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='Analisis_'+analisis.nombre.replace(/[^a-z0-9]/gi,'_')+'.docx';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);alert('Documento descargado')}catch(error){console.error('Export error:',error);alert('Error al exportar: '+error.message)}}function render(){const app=document.getElementById('app');if(currentPage==='home'){app.innerHTML='<div class="header"><div class="header-content"><h1>🎯 Gap Analysis Tool</h1></div></div><div class="container"><div class="grid"><div class="card" onclick="navigateTo(\'frameworks\')"><div class="icon mb-4">📁</div><h2>Frameworks</h2><p class="text-gray">Gestiona tus plantillas desde Excel</p></div><div class="card" onclick="navigateTo(\'analysis\')"><div class="icon mb-4">📄</div><h2>Análisis</h2><p class="text-gray">Crea análisis con IA</p></div></div></div>'}else if(currentPage==='frameworks'){app.innerHTML='<div class="header"><div class="header-content"><div class="flex items-center gap-2"><button class="btn btn-secondary btn-sm" onclick="navigateTo(\'home\')">⬅️ Inicio</button><h1>Frameworks</h1></div><button class="btn btn-primary" onclick="showNewFrameworkModal()">➕ Nuevo</button></div></div><div class="container">'+(currentData.frameworks.length===0?'<div class="card" style="text-align:center;"><h3>No hay frameworks</h3><p class="text-gray mb-4">Crea desde Excel</p><button class="btn btn-primary" onclick="showNewFrameworkModal()">Crear</button></div>':'<div class="grid">'+currentData.frameworks.map(fw=>'<div class="card"><h3>'+fw.nombre+'</h3><p class="text-gray text-sm mb-4">'+fw.categorias.length+' categorías</p><button class="btn btn-secondary btn-sm" onclick="deleteFramework(\''+fw.id+'\')">🗑️ Eliminar</button></div>').join('')+'</div>')+'</div>'}else if(currentPage==='analysis'){app.innerHTML='<div class="header"><div class="header-content"><div class="flex items-center gap-2"><button class="btn btn-secondary btn-sm" onclick="navigateTo(\'home\')">⬅️ Inicio</button><h1>Análisis</h1></div><button class="btn btn-primary" onclick="showNewAnalysisModal()" '+(currentData.frameworks.length===0?'disabled':'')+'>➕ Nuevo</button></div></div><div class="container">'+(currentData.frameworks.length===0?'<div class="card" style="text-align:center;"><h3>No hay frameworks</h3><p class="text-gray mb-4">Primero crea un framework</p><button class="btn btn-primary" onclick="navigateTo(\'frameworks\')">Ir a Frameworks</button></div>':currentData.analisis.length===0?'<div class="card" style="text-align:center;"><h3>No hay análisis</h3><p class="text-gray mb-4">Crea tu primer análisis</p><button class="btn btn-primary" onclick="showNewAnalysisModal()">Crear</button></div>':'<div class="grid">'+currentData.analisis.map(a=>'<div class="card" onclick="viewAnalysis(\''+a.id+'\')"><h3>'+a.nombre+'</h3><p class="text-gray text-sm">'+a.frameworkNombre+'</p><p class="text-gray text-sm mt-4">'+(a.documentos?.length||0)+' documentos</p></div>').join('')+'</div>')+'</div>'}else if(currentPage==='analysis-detail'){renderAnalysisDetail()}}function renderAnalysisDetail(){const analisis=currentData.analisis.find(a=>a.id===currentData.currentAnalisisId);const framework=currentData.frameworks.find(f=>f.id===analisis?.frameworkId);if(!analisis||!framework){document.getElementById('app').innerHTML='<div class="container"><div class="loader"></div></div>';return}let html='<div class="header"><div class="header-content"><div><div class="flex items-center gap-2 mb-4"><button class="btn btn-secondary btn-sm" onclick="navigateTo(\'analysis\')">⬅️ Volver</button><div><h1>'+analisis.nombre+'</h1><p class="text-gray text-sm">'+framework.nombre+'</p></div></div></div><div class="flex gap-2"><button class="btn btn-secondary btn-sm" onclick="exportAnalysis()">⬇️ Word</button></div></div></div><div class="container"><div class="card"><div class="flex justify-between items-center mb-4"><h3>Documentos ('+(analisis.documentos?.length||0)+')</h3><label class="btn btn-secondary btn-sm" style="cursor:pointer;"><input type="file" multiple onchange="handleUploadDocs(event)" style="display:none;">Subir</label></div><div class="flex gap-2" style="flex-wrap:wrap;">'+(analisis.documentos||[]).map(doc=>'<span class="badge badge-gray">'+doc.nombre+'</span>').join('')+'</div></div>';framework.categorias.forEach(cat=>{html+='<div class="card"><h2>'+cat.nombre+'</h2>';cat.elementos.forEach(elem=>{html+='<div style="margin-top:1.5rem;padding-left:1rem;border-left:2px solid #e5e7eb;"><h3>'+elem.nombre+'</h3>';elem.indicaciones.forEach(ind=>{const resp=(analisis.respuestas||[]).find(r=>r.indicacionId===ind.id);html+='<div class="analysis-item"><div class="flex justify-between items-start gap-2 mb-4"><p class="text-sm flex-1"><strong>Indicación:</strong> '+ind.texto+'</p><div class="flex gap-2" style="flex-wrap:wrap;"><button class="btn btn-primary btn-sm" onclick="analyzeIndicacion(\''+cat.id+'\',\''+elem.id+'\',\''+ind.id+'\',\''+ind.texto.replace(/'/g,"\\'").replace(/"/g,"&quot;")+'\')">🤖 Analizar con IA</button>'+(resp?'<button class="btn btn-secondary btn-sm" onclick="editResponse(\''+resp.id+'\')">✏️ Editar</button>':'')+'</div></div>';if(resp){html+='<div style="background:white;padding:1rem;border-radius:0.5rem;border:1px solid #e5e7eb;"><p class="text-sm text-gray mb-2">'+(resp.respuestaFinal?'Respuesta Final:':'Propuesta IA:')+'</p><p class="text-sm">'+(resp.respuestaFinal||resp.propuestaIA||'Sin respuesta')+'</p></div>';if(resp.gaps&&Array.isArray(resp.gaps)&&resp.gaps.length>0){html+='<div class="gap-item mt-4"><p class="text-sm" style="font-weight:600;color:#991b1b;margin-bottom:0.5rem;">⚠️ Gaps:</p>';resp.gaps.forEach(gap=>{if(typeof gap==='string'){html+='<p class="text-sm" style="color:#991b1b;">• '+gap+'</p>'}else if(gap&&gap.toString){html+='<p class="text-sm" style="color:#991b1b;">• '+gap.toString()+'</p>'}});html+='</div>'}}else{html+='<p class="text-sm text-gray" style="font-style:italic;">Pendiente</p>'}html+='</div>'});html+='</div>'});html+='</div>'});html+='</div>';document.getElementById('app').innerHTML=html}function navigateTo(page){currentPage=page;render()}function showNewFrameworkModal(){const modal=document.createElement('div');modal.className='modal-overlay';modal.innerHTML='<div class="modal"><div class="modal-header"><h2>Nuevo Framework</h2><button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button></div><div class="modal-body"><div class="form-group"><label>Nombre</label><input type="text" id="fw-nombre" placeholder="ISO 27001"></div><div class="form-group"><label>Archivo Excel</label><input type="file" id="fw-file" accept=".xlsx,.xls"></div><button class="btn btn-primary" onclick="createFramework()">Crear</button></div></div>';document.body.appendChild(modal)}async function createFramework(){const nombre=document.getElementById('fw-nombre').value;const file=document.getElementById('fw-file').files[0];if(!file)return alert('Selecciona archivo');try{const parsed=await parseExcel(file);const fw={...parsed,nombre:nombre||parsed.nombre,createdAt:new Date(),updatedAt:new Date()};const saved=await DataStore.saveFramework(fw);currentData.frameworks.push(saved);closeModal();navigateTo('frameworks')}catch(error){alert('Error: '+error.message)}}async function deleteFramework(id){if(!confirm('¿Eliminar?'))return;await DataStore.deleteFramework(id);currentData.frameworks=currentData.frameworks.filter(f=>f.id!==id);render()}function showNewAnalysisModal(){const modal=document.createElement('div');modal.className='modal-overlay';modal.innerHTML='<div class="modal"><div class="modal-header"><h2>Nuevo Análisis</h2><button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button></div><div class="modal-body"><div class="form-group"><label>Nombre</label><input type="text" id="an-nombre"></div><div class="form-group"><label>Framework</label><select id="an-framework"><option value="">Selecciona...</option>'+currentData.frameworks.map(fw=>'<option value="'+fw.id+'">'+fw.nombre+'</option>').join('')+'</select></div><button class="btn btn-primary" onclick="createAnalysis()">Crear</button></div></div>';document.body.appendChild(modal)}async function createAnalysis(){const nombre=document.getElementById('an-nombre').value;const fwId=document.getElementById('an-framework').value;if(!nombre||!fwId)return alert('Completa campos');const fw=currentData.frameworks.find(f=>f.id===fwId);const newAnalisis={nombre,frameworkId:fwId,frameworkNombre:fw.nombre,documentos:[],respuestas:[],status:'borrador',createdAt:new Date()};const saved=await DataStore.saveAnalisis(newAnalisis);currentData.analisis.push(saved);currentData.currentAnalisisId=saved.id;closeModal();navigateTo('analysis-detail')}function viewAnalysis(id){currentData.currentAnalisisId=id;navigateTo('analysis-detail')}async function handleUploadDocs(event){const files=Array.from(event.target.files);const analisis=currentData.analisis.find(a=>a.id===currentData.currentAnalisisId);const newDocs=files.map(f=>({id:'doc-'+Date.now()+'-'+Math.random(),nombre:f.name,uploadedAt:new Date()}));analisis.documentos=[...(analisis.documentos||[]),...newDocs];await DataStore.saveAnalisis(analisis);render()}async function analyzeIndicacion(catId,elemId,indId,indTexto){const analisis=currentData.analisis.find(a=>a.id===currentData.currentAnalisisId);if(!analisis.documentos||analisis.documentos.length===0)return alert('⚠️ Sube documentos primero para poder analizar');const btn=event.target;const originalText=btn.innerHTML;btn.innerHTML='⏳ Analizando...';btn.disabled=true;try{const result=await analyzeWithMistral(indTexto,analisis.documentos);const newResp={id:'resp-'+Date.now(),categoriaId:catId,elementoId:elemId,indicacionId:indId,propuestaIA:result.propuestaRespuesta,respuestaFinal:'',gaps:result.gapsDetectados,status:'completado'};if(!analisis.respuestas)analisis.respuestas=[];const idx=analisis.respuestas.findIndex(r=>r.indicacionId===indId);if(idx>=0)analisis.respuestas[idx]=newResp;else analisis.respuestas.push(newResp);await DataStore.saveAnalisis(analisis);render()}catch(error){console.error('Error analyzing:',error);alert('❌ Error al analizar: '+error.message);btn.innerHTML=originalText;btn.disabled=false}}function editResponse(respId){const analisis=currentData.analisis.find(a=>a.id===currentData.currentAnalisisId);const resp=analisis.respuestas.find(r=>r.id===respId);const modal=document.createElement('div');modal.className='modal-overlay';modal.innerHTML='<div class="modal"><div class="modal-header"><h2>Editar</h2><button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button></div><div class="modal-body"><div class="form-group"><label>Propuesta IA:</label><p class="text-sm text-gray" style="padding:1rem;background:#f9fafb;border-radius:0.5rem;">'+resp.propuestaIA+'</p></div><div class="form-group"><label>Respuesta Final:</label><textarea id="edit-response">'+(resp.respuestaFinal||resp.propuestaIA)+'</textarea></div><div class="flex gap-2"><button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveEditedResponse(\''+respId+'\')">Guardar</button></div></div></div>';document.body.appendChild(modal)}async function saveEditedResponse(respId){const finalText=document.getElementById('edit-response').value;const analisis=currentData.analisis.find(a=>a.id===currentData.currentAnalisisId);analisis.respuestas=analisis.respuestas.map(r=>r.id===respId?{...r,respuestaFinal:finalText,status:'revisado'}:r);await DataStore.saveAnalisis(analisis);closeModal();render()}async function exportAnalysis(){const analisis=currentData.analisis.find(a=>a.id===currentData.currentAnalisisId);const framework=currentData.frameworks.find(f=>f.id===analisis.frameworkId);await exportToWord(analisis,framework)}function closeModal(){const modal=document.querySelector('.modal-overlay');if(modal)modal.remove()}async function init(){try{const[frameworks,analisis]=await Promise.all([DataStore.getFrameworks(),DataStore.getAnalisis()]);currentData.frameworks=frameworks;currentData.analisis=analisis;render()}catch(error){console.error('Init error:',error);document.getElementById('app').innerHTML='<div class="container" style="text-align:center;padding:4rem 1rem;"><h1 style="color:#ef4444;">Error al cargar</h1><p class="text-gray mt-4">'+error.message+'</p><button class="btn btn-primary mt-4" onclick="location.reload()">Reintentar</button></div>'}}document.addEventListener('DOMContentLoaded',init);if(document.readyState==='complete')init();
+// Configuración
+const CONFIG = {
+  mistralApiKey: 'mAG1EEnyOQjfy5oQ3WPv2wTay0DV9Jhw',
+  firebase: {
+    apiKey: "AIzaSyDUZR1huz-XHFQBI2CnRGDMxg_f3kFErPA",
+    authDomain: "gapanalysis-8b408.firebaseapp.com",
+    projectId: "gapanalysis-8b408",
+    storageBucket: "gapanalysis-8b408.firebasestorage.app",
+    messagingSenderId: "48683423858",
+    appId: "1:48683423858:web:7ca2267a11f448b2864aeb"
+  },
+  costs: {
+    inputPer1k: 0.001,
+    outputPer1k: 0.003
+  }
+};
+
+// Estado global
+let db = null;
+let currentPage = 'home';
+let currentData = {
+  frameworks: [],
+  analisis: [],
+  currentAnalisisId: null,
+  temperature: 0.3
+};
+
+// Configurar PDF.js
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// Init Firebase
+try {
+  firebase.initializeApp(CONFIG.firebase);
+  db = firebase.firestore();
+  console.log('✅ Firestore activo');
+} catch (error) {
+  console.error('❌ Error Firebase:', error);
+}
+
+// ============================================================
+// EXTRACCIÓN DE TEXTO
+// ============================================================
+
+async function extractTextFromPDF(file) {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += `\n--- PÁGINA ${i} ---\n${pageText}`;
+    }
+    
+    return { contenido: fullText, paginas: pdf.numPages };
+  } catch (error) {
+    console.error('Error extrayendo PDF:', error);
+    throw new Error('No se pudo leer el PDF: ' + error.message);
+  }
+}
+
+async function extractTextFromWord(file) {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    const text = result.value;
+    const estimatedPages = Math.ceil(text.length / 3000);
+    return { contenido: text, paginas: estimatedPages };
+  } catch (error) {
+    console.error('Error extrayendo Word:', error);
+    throw new Error('No se pudo leer el Word: ' + error.message);
+  }
+}
+
+async function processDocument(file, displayId) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let extracted;
+  
+  if (ext === 'pdf') {
+    extracted = await extractTextFromPDF(file);
+  } else if (ext === 'docx' || ext === 'doc') {
+    extracted = await extractTextFromWord(file);
+  } else {
+    throw new Error('Formato no soportado. Solo PDF y Word (.docx)');
+  }
+  
+  return {
+    displayId,
+    nombre: file.name,
+    contenido: extracted.contenido,
+    paginas: extracted.paginas,
+    tamaño: file.size,
+    uploadedAt: new Date()
+  };
+}
+
+// ============================================================
+// CÁLCULO DE COSTOS
+// ============================================================
+
+function estimateTokens(text) {
+  return Math.ceil(text.length / 4);
+}
+
+function calculateCost(inputTokens, outputTokens) {
+  const inputCost = (inputTokens / 1000) * CONFIG.costs.inputPer1k;
+  const outputCost = (outputTokens / 1000) * CONFIG.costs.outputPer1k;
+  return { inputCost, outputCost, total: inputCost + outputCost };
+}
+
+function formatCost(cost) {
+  if (cost < 0.01) return '< $0.01';
+  return '$' + cost.toFixed(3);
+}
+
+// ============================================================
+// DATA STORE
+// ============================================================
+
+const DataStore = {
+  async saveFramework(fw) {
+    if (db) {
+      const ref = db.collection('frameworks');
+      if (fw.id) {
+        await ref.doc(fw.id).set(fw);
+        return fw;
+      }
+      const doc = await ref.add(fw);
+      return { ...fw, id: doc.id };
+    }
+    const all = JSON.parse(localStorage.getItem('frameworks') || '[]');
+    if (!fw.id) fw.id = Date.now().toString();
+    const idx = all.findIndex(f => f.id === fw.id);
+    if (idx >= 0) all[idx] = fw;
+    else all.push(fw);
+    localStorage.setItem('frameworks', JSON.stringify(all));
+    return fw;
+  },
+  
+  async getFrameworks() {
+    if (db) {
+      const snap = await db.collection('frameworks').get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+    return JSON.parse(localStorage.getItem('frameworks') || '[]');
+  },
+  
+  async deleteFramework(id) {
+    if (db) await db.collection('frameworks').doc(id).delete();
+    else {
+      const all = JSON.parse(localStorage.getItem('frameworks') || '[]');
+      localStorage.setItem('frameworks', JSON.stringify(all.filter(f => f.id !== id)));
+    }
+  },
+  
+  async saveAnalisis(a) {
+    if (db) {
+      const ref = db.collection('analisis');
+      if (a.id) {
+        await ref.doc(a.id).set(a);
+        return a;
+      }
+      const doc = await ref.add(a);
+      return { ...a, id: doc.id };
+    }
+    const all = JSON.parse(localStorage.getItem('analisis') || '[]');
+    if (!a.id) a.id = Date.now().toString();
+    const idx = all.findIndex(x => x.id === a.id);
+    if (idx >= 0) all[idx] = a;
+    else all.push(a);
+    localStorage.setItem('analisis', JSON.stringify(all));
+    return a;
+  },
+  
+  async getAnalisis() {
+    if (db) {
+      const snap = await db.collection('analisis').get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+    return JSON.parse(localStorage.getItem('analisis') || '[]');
+  }
+};
+
+
+// ============================================================
+// UTILIDADES
+// ============================================================
+
+function parseExcel(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        
+        const categorias = [];
+        let currentCat = null;
+        let currentElem = null;
+        
+        rows.slice(1).forEach((row, i) => {
+          const catText = row[0]?.toString().trim();
+          const elemText = row[1]?.toString().trim();
+          const indText = row[2]?.toString().trim();
+          
+          if (catText) {
+            if (currentCat && currentElem) currentCat.elementos.push(currentElem);
+            if (currentCat) categorias.push(currentCat);
+            currentCat = { id: `cat-${Date.now()}-${i}`, nombre: catText, elementos: [] };
+            currentElem = null;
+          }
+          if (elemText && currentCat) {
+            if (currentElem) currentCat.elementos.push(currentElem);
+            currentElem = { id: `elem-${Date.now()}-${i}`, nombre: elemText, indicaciones: [] };
+          }
+          if (indText && currentElem) {
+            currentElem.indicaciones.push({ id: `ind-${Date.now()}-${i}`, texto: indText });
+          }
+        });
+        
+        if (currentCat && currentElem) currentCat.elementos.push(currentElem);
+        if (currentCat) categorias.push(currentCat);
+        
+        resolve({ nombre: file.name.replace(/\.(xlsx|xls)$/, ''), categorias });
+      } catch (error) {
+        reject(error);
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// ============================================================
+// ANÁLISIS CON MISTRAL
+// ============================================================
+
+async function analyzeWithMistral(indicacion, documentos, selectedDocs, temperature = 0.3) {
+  const docsToUse = documentos.filter(d => selectedDocs.includes(d.displayId));
+  
+  if (docsToUse.length === 0) {
+    throw new Error('Debes seleccionar al menos un documento');
+  }
+  
+  // Construir prompt con documentos completos
+  let docsText = 'DOCUMENTOS DISPONIBLES:\n\n';
+  docsToUse.forEach(doc => {
+    docsText += `${doc.displayId}: ${doc.nombre} (${doc.paginas} páginas)\n`;
+    docsText += `CONTENIDO:\n${doc.contenido}\n\n`;
+  });
+  
+  const prompt = `Eres un auditor experto en cumplimiento normativo. Analiza los documentos proporcionados en relación al siguiente criterio.
+
+CRITERIO A EVALUAR:
+${indicacion}
+
+${docsText}
+
+INSTRUCCIONES IMPORTANTES:
+1. Analiza OBJETIVAMENTE el contenido real de los documentos
+2. Cuando encuentres información relevante, CITA la fuente usando el formato (D1, P5) donde D1 es el documento y P5 es la página
+3. Si no encuentras evidencia clara de cumplimiento, indícalo honestamente
+4. Identifica gaps específicos y medibles
+5. Asigna un nivel de confianza basado en la calidad de la evidencia encontrada:
+   - 0.9-1.0: Evidencia clara y completa en los documentos
+   - 0.7-0.89: Evidencia presente pero incompleta
+   - 0.4-0.69: Evidencia parcial o ambigua
+   - 0.0-0.39: Poca o ninguna evidencia
+
+FORMATO DE RESPUESTA (devuelve SOLO JSON válido, sin texto adicional):
+{
+  "propuestaRespuesta": "Análisis profesional del cumplimiento con referencias citadas (D1, P5). Máximo 250 palabras.",
+  "gapsDetectados": ["Gap específico 1", "Gap específico 2"],
+  "referencias": [{"doc": "D1", "pagina": 5}, {"doc": "D2", "pagina": 12}],
+  "confianza": 0.85
+}`;
+
+  // Calcular tokens estimados
+  const inputTokens = estimateTokens(prompt);
+  const estimatedOutputTokens = 500;
+  const cost = calculateCost(inputTokens, estimatedOutputTokens);
+  
+  console.log(`📊 Análisis estimado: ${inputTokens} tokens entrada, costo ~${formatCost(cost.total)}`);
+  
+  try {
+    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CONFIG.mistralApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'mistral-small-latest',
+        temperature: temperature,
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Error en API de Mistral');
+    }
+    
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    console.log('Respuesta Mistral:', content);
+    
+    // Extraer JSON
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        propuestaRespuesta: parsed.propuestaRespuesta || 'Análisis completado',
+        gapsDetectados: Array.isArray(parsed.gapsDetectados) ? parsed.gapsDetectados : [],
+        referencias: Array.isArray(parsed.referencias) ? parsed.referencias : [],
+        confianza: typeof parsed.confianza === 'number' ? parsed.confianza : 0.5,
+        tokensUsados: inputTokens + estimateTokens(content),
+        costo: cost.total
+      };
+    }
+    
+    return {
+      propuestaRespuesta: content || 'Sin respuesta',
+      gapsDetectados: [],
+      referencias: [],
+      confianza: 0.5,
+      tokensUsados: inputTokens,
+      costo: cost.total
+    };
+  } catch (error) {
+    console.error('Error en Mistral:', error);
+    throw error;
+  }
+}
+
+// ============================================================
+// EXPORTAR A WORD
+// ============================================================
+
+async function exportToWord(analisis, framework) {
+  try {
+    const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+    
+    const children = [
+      new Paragraph({ text: `Informe: ${analisis.nombre}`, heading: HeadingLevel.TITLE }),
+      new Paragraph({ text: `Framework: ${framework.nombre}`, heading: HeadingLevel.HEADING_2 }),
+      new Paragraph({ text: `Fecha: ${new Date().toLocaleDateString('es-ES')}` }),
+      new Paragraph({ text: '' }),
+      new Paragraph({ text: 'Bibliografía', heading: HeadingLevel.HEADING_1 })
+    ];
+    
+    // Bibliografía
+    (analisis.documentos || []).forEach(doc => {
+      children.push(new Paragraph({ 
+        text: `${doc.displayId}: ${doc.nombre} (${doc.paginas} páginas)` 
+      }));
+    });
+    
+    children.push(
+      new Paragraph({ text: '' }),
+      new Paragraph({ text: 'Análisis Detallado', heading: HeadingLevel.HEADING_1 })
+    );
+    
+    // Contenido
+    framework.categorias.forEach(cat => {
+      children.push(new Paragraph({ text: cat.nombre, heading: HeadingLevel.HEADING_2 }));
+      cat.elementos.forEach(elem => {
+        children.push(new Paragraph({ text: elem.nombre, heading: HeadingLevel.HEADING_3 }));
+        elem.indicaciones.forEach(ind => {
+          const resp = (analisis.respuestas || []).find(r => r.indicacionId === ind.id);
+          if (resp) {
+            children.push(
+              new Paragraph({ 
+                children: [
+                  new TextRun({ text: 'Indicación: ', bold: true }), 
+                  new TextRun(ind.texto)
+                ] 
+              }),
+              new Paragraph({ 
+                children: [
+                  new TextRun({ text: 'Respuesta: ', bold: true }), 
+                  new TextRun(resp.respuestaFinal || resp.propuestaIA || 'Sin respuesta')
+                ] 
+              }),
+              new Paragraph({ 
+                children: [
+                  new TextRun({ text: `Confianza: ${Math.round((resp.confianza || 0) * 100)}%`, italics: true })
+                ] 
+              })
+            );
+            
+            if (resp.gaps && resp.gaps.length > 0) {
+              children.push(new Paragraph({ 
+                children: [new TextRun({ text: 'Gaps detectados: ', bold: true, color: 'FF0000' })] 
+              }));
+              resp.gaps.forEach(gap => {
+                children.push(new Paragraph({ text: `  • ${gap}` }));
+              });
+            }
+            
+            children.push(new Paragraph({ text: '' }));
+          }
+        });
+      });
+    });
+    
+    const doc = new Document({ sections: [{ children }] });
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Analisis_${analisis.nombre.replace(/[^a-z0-9]/gi, '_')}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    alert('✅ Documento descargado exitosamente');
+  } catch (error) {
+    console.error('Error exportando:', error);
+    alert('❌ Error al exportar: ' + error.message);
+  }
+}
+
+
+// ============================================================
+// RENDERIZADO
+// ============================================================
+
+function render() {
+  const app = document.getElementById('app');
+  
+  if (currentPage === 'home') {
+    app.innerHTML = renderHome();
+  } else if (currentPage === 'frameworks') {
+    app.innerHTML = renderFrameworks();
+  } else if (currentPage === 'analysis') {
+    app.innerHTML = renderAnalysisList();
+  } else if (currentPage === 'analysis-detail') {
+    renderAnalysisDetail();
+  }
+}
+
+function renderHome() {
+  return `
+    <div class="header">
+      <div class="header-content">
+        <h1>🎯 Gap Analysis Tool Professional</h1>
+      </div>
+    </div>
+    <div class="container">
+      <div class="grid">
+        <div class="card clickable" onclick="navigateTo('frameworks')">
+          <div class="icon mb-4">📁</div>
+          <h2>Frameworks</h2>
+          <p class="text-gray">Gestiona plantillas de análisis desde Excel</p>
+          <p class="text-sm text-gray mt-4">${currentData.frameworks.length} frameworks disponibles</p>
+        </div>
+        <div class="card clickable" onclick="navigateTo('analysis')">
+          <div class="icon mb-4">📄</div>
+          <h2>Análisis</h2>
+          <p class="text-gray">Crea análisis con IA y trazabilidad completa</p>
+          <p class="text-sm text-gray mt-4">${currentData.analisis.length} análisis creados</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderFrameworks() {
+  const frameworks = currentData.frameworks;
+  return `
+    <div class="header">
+      <div class="header-content">
+        <div class="flex items-center gap-2">
+          <button class="btn btn-secondary btn-sm" onclick="navigateTo('home')">⬅️ Inicio</button>
+          <h1>Frameworks</h1>
+        </div>
+        <button class="btn btn-primary" onclick="showNewFrameworkModal()">➕ Nuevo Framework</button>
+      </div>
+    </div>
+    <div class="container">
+      ${frameworks.length === 0 ? `
+        <div class="card" style="text-align:center;">
+          <h3>No hay frameworks</h3>
+          <p class="text-gray mb-4">Crea tu primer framework desde un archivo Excel</p>
+          <button class="btn btn-primary" onclick="showNewFrameworkModal()">Crear Framework</button>
+        </div>
+      ` : `
+        <div class="grid">
+          ${frameworks.map(fw => `
+            <div class="card">
+              <h3>${fw.nombre}</h3>
+              <p class="text-gray text-sm mb-4">${fw.categorias.length} categorías • ${fw.categorias.reduce((sum, c) => sum + c.elementos.length, 0)} elementos</p>
+              <button class="btn btn-secondary btn-sm" onclick="deleteFramework('${fw.id}')">🗑️ Eliminar</button>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function renderAnalysisList() {
+  const analisisList = currentData.analisis;
+  const frameworks = currentData.frameworks;
+  
+  return `
+    <div class="header">
+      <div class="header-content">
+        <div class="flex items-center gap-2">
+          <button class="btn btn-secondary btn-sm" onclick="navigateTo('home')">⬅️ Inicio</button>
+          <h1>Análisis</h1>
+        </div>
+        <button class="btn btn-primary" onclick="showNewAnalysisModal()" ${frameworks.length === 0 ? 'disabled' : ''}>➕ Nuevo Análisis</button>
+      </div>
+    </div>
+    <div class="container">
+      ${frameworks.length === 0 ? `
+        <div class="card" style="text-align:center;">
+          <h3>No hay frameworks disponibles</h3>
+          <p class="text-gray mb-4">Primero debes crear un framework</p>
+          <button class="btn btn-primary" onclick="navigateTo('frameworks')">Ir a Frameworks</button>
+        </div>
+      ` : analisisList.length === 0 ? `
+        <div class="card" style="text-align:center;">
+          <h3>No hay análisis</h3>
+          <p class="text-gray mb-4">Crea tu primer análisis</p>
+          <button class="btn btn-primary" onclick="showNewAnalysisModal()">Crear Análisis</button>
+        </div>
+      ` : `
+        <div class="grid">
+          ${analisisList.map(a => `
+            <div class="card clickable" onclick="viewAnalysis('${a.id}')">
+              <h3>${a.nombre}</h3>
+              <p class="text-gray text-sm">${a.frameworkNombre}</p>
+              <p class="text-gray text-sm mt-4">
+                📚 ${(a.documentos || []).length} documentos
+                ${a.temperature !== undefined ? `• 🌡️ Temp: ${a.temperature}` : ''}
+              </p>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function getConfidenceColor(conf) {
+  if (conf >= 0.8) return 'green';
+  if (conf >= 0.5) return 'yellow';
+  return 'red';
+}
+
+function getConfidenceLabel(conf) {
+  if (conf >= 0.8) return 'Alta';
+  if (conf >= 0.5) return 'Media';
+  return 'Baja';
+}
+
+function renderAnalysisDetail() {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const framework = currentData.frameworks.find(f => f.id === analisis?.frameworkId);
+  
+  if (!analisis || !framework) {
+    document.getElementById('app').innerHTML = '<div class="container"><div class="loader"></div></div>';
+    return;
+  }
+  
+  const temperature = analisis.temperature !== undefined ? analisis.temperature : 0.3;
+  
+  let html = `
+    <div class="header">
+      <div class="header-content">
+        <div>
+          <div class="flex items-center gap-2 mb-4">
+            <button class="btn btn-secondary btn-sm" onclick="navigateTo('analysis')">⬅️ Volver</button>
+            <div>
+              <h1>${analisis.nombre}</h1>
+              <p class="text-gray text-sm">${framework.nombre}</p>
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-2" style="flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" onclick="showBibliografia()">📚 Bibliografía</button>
+          <button class="btn btn-secondary btn-sm" onclick="showStats()">📊 Estadísticas</button>
+          <button class="btn btn-success btn-sm" onclick="exportAnalysis()">⬇️ Exportar Word</button>
+        </div>
+      </div>
+    </div>
+    
+    <div class="container">
+      <!-- Configuración de temperatura -->
+      <div class="card">
+        <h3>⚙️ Configuración de Análisis</h3>
+        <div class="form-group">
+          <label>Temperatura de IA: <span class="temperature-display">${temperature.toFixed(1)}</span></label>
+          <input type="range" min="0" max="1" step="0.1" value="${temperature}" 
+                 onchange="updateTemperature(this.value)" 
+                 oninput="this.previousElementSibling.querySelector('.temperature-display').textContent = parseFloat(this.value).toFixed(1)">
+          <div class="temperature-label">
+            <strong>0.0</strong> = Consistente y preciso (mismo resultado siempre) | 
+            <strong>1.0</strong> = Creativo y variado (diferentes resultados)<br>
+            <strong>Recomendado: 0.3</strong> para análisis profesional
+          </div>
+        </div>
+      </div>
+      
+      <!-- Documentos -->
+      <div class="card">
+        <div class="flex justify-between items-center mb-4">
+          <h3>📚 Documentos (${(analisis.documentos || []).length})</h3>
+          <label class="btn btn-primary btn-sm" style="cursor:pointer;">
+            <input type="file" accept=".pdf,.docx,.doc" multiple onchange="handleUploadDocs(event)" style="display:none;">
+            ➕ Subir Documentos
+          </label>
+        </div>
+        ${(analisis.documentos || []).length === 0 ? `
+          <p class="text-gray text-sm">No hay documentos. Sube PDFs o Word para analizar.</p>
+        ` : `
+          <div style="display:grid; gap:0.5rem;">
+            ${(analisis.documentos || []).map(doc => `
+              <div class="biblio-item">
+                <div class="flex justify-between items-center">
+                  <div>
+                    <strong>${doc.displayId}:</strong> ${doc.nombre}
+                    <span class="text-gray text-sm">• ${doc.paginas} páginas • ${(doc.tamaño / 1024).toFixed(0)} KB</span>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" onclick="viewDocContent('${doc.displayId}')">👁️ Ver</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      </div>
+  `;
+  
+  // Indicaciones por categoría
+  framework.categorias.forEach(cat => {
+    html += `<div class="card"><h2>${cat.nombre}</h2>`;
+    
+    cat.elementos.forEach(elem => {
+      html += `<div style="margin-top:1.5rem;padding-left:1rem;border-left:2px solid #e5e7eb;"><h3>${elem.nombre}</h3>`;
+      
+      elem.indicaciones.forEach(ind => {
+        const resp = (analisis.respuestas || []).find(r => r.indicacionId === ind.id);
+        const allDocs = (analisis.documentos || []).map(d => d.displayId);
+        const selectedDocs = resp?.documentosUsados || allDocs;
+        
+        html += `
+          <div class="analysis-item">
+            <div class="flex justify-between items-start gap-2 mb-4">
+              <p class="text-sm flex-1"><strong>Indicación:</strong> ${ind.texto}</p>
+              <div class="flex gap-2" style="flex-wrap:wrap;">
+                <button class="btn btn-primary btn-sm" onclick="showAnalyzeModal('${cat.id}','${elem.id}','${ind.id}','${ind.texto.replace(/'/g, "\\'")}')">
+                  🤖 Analizar con IA
+                </button>
+                ${resp ? `<button class="btn btn-secondary btn-sm" onclick="editResponse('${resp.id}')">✏️ Editar</button>` : ''}
+              </div>
+            </div>
+        `;
+        
+        if (resp) {
+          const confColor = getConfidenceColor(resp.confianza || 0);
+          const confLabel = getConfidenceLabel(resp.confianza || 0);
+          const confPercent = Math.round((resp.confianza || 0) * 100);
+          
+          html += `
+            <div style="background:white;padding:1rem;border-radius:0.5rem;border:1px solid #e5e7eb;">
+              <p class="text-sm text-gray mb-2">${resp.respuestaFinal ? 'Respuesta Final:' : 'Propuesta IA:'}</p>
+              <p class="text-sm">${resp.respuestaFinal || resp.propuestaIA || 'Sin respuesta'}</p>
+              
+              <div class="mt-4">
+                <div class="flex justify-between items-center mb-2">
+                  <span class="text-sm"><strong>Confianza:</strong> <span class="badge badge-${confColor}">${confPercent}% (${confLabel})</span></span>
+                  ${resp.costo ? `<span class="text-xs text-gray">Costo: ${formatCost(resp.costo)}</span>` : ''}
+                </div>
+                <div class="confidence-bar">
+                  <div class="confidence-fill confidence-${confColor}" style="width:${confPercent}%"></div>
+                </div>
+              </div>
+              
+              ${resp.documentosUsados && resp.documentosUsados.length > 0 ? `
+                <p class="text-xs text-gray mt-2">📄 Documentos usados: ${resp.documentosUsados.join(', ')}</p>
+              ` : ''}
+            </div>
+          `;
+          
+          if (resp.gaps && resp.gaps.length > 0) {
+            html += `
+              <div class="gap-item mt-4">
+                <p class="text-sm" style="font-weight:600;color:#991b1b;margin-bottom:0.5rem;">⚠️ Gaps detectados:</p>
+                ${resp.gaps.map(gap => `<p class="text-sm" style="color:#991b1b;">• ${gap}</p>`).join('')}
+              </div>
+            `;
+          }
+        } else {
+          html += '<p class="text-sm text-gray" style="font-style:italic;">⏳ Pendiente de análisis</p>';
+        }
+        
+        html += '</div>';
+      });
+      
+      html += '</div>';
+    });
+    
+    html += '</div>';
+  });
+  
+  html += '</div>';
+  document.getElementById('app').innerHTML = html;
+}
+
+
+// ============================================================
+// EVENT HANDLERS
+// ============================================================
+
+function navigateTo(page) {
+  currentPage = page;
+  render();
+}
+
+function showNewFrameworkModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Nuevo Framework</h2>
+        <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Nombre del Framework</label>
+          <input type="text" id="fw-nombre" placeholder="Ej: ISO 27001">
+        </div>
+        <div class="form-group">
+          <label>Archivo Excel (.xlsx, .xls)</label>
+          <input type="file" id="fw-file" accept=".xlsx,.xls">
+          <p class="text-xs text-gray mt-2">Formato: Columna 1=Categoría, 2=Elemento, 3=Indicación</p>
+        </div>
+        <button class="btn btn-primary" onclick="createFramework()">Crear Framework</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function createFramework() {
+  const nombre = document.getElementById('fw-nombre').value;
+  const file = document.getElementById('fw-file').files[0];
+  
+  if (!file) return alert('❌ Selecciona un archivo Excel');
+  
+  try {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '⏳ Procesando...';
+    
+    const parsed = await parseExcel(file);
+    const fw = {
+      ...parsed,
+      nombre: nombre || parsed.nombre,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    
+    const saved = await DataStore.saveFramework(fw);
+    currentData.frameworks.push(saved);
+    closeModal();
+    navigateTo('frameworks');
+  } catch (error) {
+    alert('❌ Error al cargar Excel: ' + error.message);
+    event.target.disabled = false;
+    event.target.textContent = 'Crear Framework';
+  }
+}
+
+async function deleteFramework(id) {
+  if (!confirm('¿Eliminar este framework?')) return;
+  await DataStore.deleteFramework(id);
+  currentData.frameworks = currentData.frameworks.filter(f => f.id !== id);
+  render();
+}
+
+function showNewAnalysisModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Nuevo Análisis</h2>
+        <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Nombre del Análisis</label>
+          <input type="text" id="an-nombre" placeholder="Ej: Auditoría Q1 2024">
+        </div>
+        <div class="form-group">
+          <label>Framework a utilizar</label>
+          <select id="an-framework">
+            <option value="">Selecciona un framework...</option>
+            ${currentData.frameworks.map(fw => `<option value="${fw.id}">${fw.nombre}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Temperatura de IA (Recomendado: 0.3)</label>
+          <input type="range" id="an-temp" min="0" max="1" step="0.1" value="0.3" 
+                 oninput="document.getElementById('temp-display').textContent = this.value">
+          <p class="text-sm text-gray">Temperatura seleccionada: <strong id="temp-display">0.3</strong></p>
+        </div>
+        <button class="btn btn-primary" onclick="createAnalysis()">Crear Análisis</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function createAnalysis() {
+  const nombre = document.getElementById('an-nombre').value;
+  const fwId = document.getElementById('an-framework').value;
+  const temperature = parseFloat(document.getElementById('an-temp').value);
+  
+  if (!nombre || !fwId) return alert('❌ Completa todos los campos');
+  
+  const fw = currentData.frameworks.find(f => f.id === fwId);
+  const newAnalisis = {
+    nombre,
+    frameworkId: fwId,
+    frameworkNombre: fw.nombre,
+    documentos: [],
+    respuestas: [],
+    temperature,
+    status: 'borrador',
+    createdAt: new Date()
+  };
+  
+  const saved = await DataStore.saveAnalisis(newAnalisis);
+  currentData.analisis.push(saved);
+  currentData.currentAnalisisId = saved.id;
+  closeModal();
+  navigateTo('analysis-detail');
+}
+
+function viewAnalysis(id) {
+  currentData.currentAnalisisId = id;
+  navigateTo('analysis-detail');
+}
+
+async function handleUploadDocs(event) {
+  const files = Array.from(event.target.files);
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  
+  if (files.length === 0) return;
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Procesando Documentos</h2>
+      </div>
+      <div class="modal-body">
+        <div class="loader"></div>
+        <p class="text-center text-gray mt-4">Extrayendo texto de ${files.length} documento(s)...</p>
+        <p class="text-center text-sm text-gray" id="progress">0 / ${files.length}</p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  
+  try {
+    const nextId = (analisis.documentos || []).length + 1;
+    const processed = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      document.getElementById('progress').textContent = `${i + 1} / ${files.length}`;
+      const displayId = `D${nextId + i}`;
+      const doc = await processDocument(files[i], displayId);
+      processed.push(doc);
+    }
+    
+    analisis.documentos = [...(analisis.documentos || []), ...processed];
+    await DataStore.saveAnalisis(analisis);
+    
+    closeModal();
+    alert(`✅ ${processed.length} documento(s) procesado(s) exitosamente`);
+    render();
+  } catch (error) {
+    closeModal();
+    alert('❌ Error procesando documentos: ' + error.message);
+  }
+}
+
+function updateTemperature(value) {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  analisis.temperature = parseFloat(value);
+  DataStore.saveAnalisis(analisis);
+}
+
+function showAnalyzeModal(catId, elemId, indId, indTexto) {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  
+  if (!analisis.documentos || analisis.documentos.length === 0) {
+    return alert('⚠️ Primero debes subir documentos para poder analizar');
+  }
+  
+  const allDocs = analisis.documentos.map(d => d.displayId);
+  const resp = (analisis.respuestas || []).find(r => r.indicacionId === indId);
+  const prevSelected = resp?.documentosUsados || allDocs;
+  
+  // Calcular costo estimado
+  let totalTokens = 0;
+  analisis.documentos.forEach(doc => {
+    totalTokens += estimateTokens(doc.contenido);
+  });
+  totalTokens += estimateTokens(indTexto) + 500; // prompt + respuesta estimada
+  const estimatedCost = calculateCost(totalTokens, 500);
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Analizar con IA</h2>
+        <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label><strong>Indicación:</strong></label>
+          <p class="text-sm">${indTexto}</p>
+        </div>
+        
+        <div class="cost-alert">
+          <p><strong>💰 Estimación de costos:</strong></p>
+          <p class="text-sm">• Tokens estimados: ~${totalTokens.toLocaleString()}</p>
+          <p class="text-sm">• Costo aproximado: ${formatCost(estimatedCost.total)}</p>
+          <p class="text-xs text-gray mt-2">El costo real puede variar según la longitud de la respuesta</p>
+        </div>
+        
+        <div class="doc-selector">
+          <label><strong>📑 Selecciona documentos para analizar:</strong></label>
+          <p class="text-xs text-gray mb-2">Solo se enviarán los documentos seleccionados a la IA</p>
+          ${analisis.documentos.map(doc => `
+            <label>
+              <input type="checkbox" class="doc-checkbox" value="${doc.displayId}" 
+                     ${prevSelected.includes(doc.displayId) ? 'checked' : ''}>
+              <span><strong>${doc.displayId}:</strong> ${doc.nombre} (${doc.paginas} págs)</span>
+            </label>
+          `).join('')}
+        </div>
+        
+        <div class="flex gap-2">
+          <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+          <button class="btn btn-success" onclick="analyzeIndicacion('${catId}','${elemId}','${indId}','${indTexto.replace(/'/g, "\\'")}')">
+            🚀 Analizar (${formatCost(estimatedCost.total)})
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function analyzeIndicacion(catId, elemId, indId, indTexto) {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const selectedDocs = Array.from(document.querySelectorAll('.doc-checkbox:checked')).map(cb => cb.value);
+  
+  if (selectedDocs.length === 0) {
+    return alert('⚠️ Debes seleccionar al menos un documento');
+  }
+  
+  const modal = document.querySelector('.modal-overlay');
+  modal.querySelector('.modal-body').innerHTML = `
+    <div class="loader"></div>
+    <p class="text-center text-gray mt-4">Analizando con IA...</p>
+    <p class="text-center text-sm text-gray">Esto puede tomar 10-30 segundos</p>
+  `;
+  
+  try {
+    const result = await analyzeWithMistral(
+      indTexto,
+      analisis.documentos,
+      selectedDocs,
+      analisis.temperature
+    );
+    
+    const newResp = {
+      id: `resp-${Date.now()}`,
+      categoriaId: catId,
+      elementoId: elemId,
+      indicacionId: indId,
+      propuestaIA: result.propuestaRespuesta,
+      respuestaFinal: '',
+      gaps: result.gapsDetectados,
+      referencias: result.referencias,
+      confianza: result.confianza,
+      documentosUsados: selectedDocs,
+      tokensUsados: result.tokensUsados,
+      costo: result.costo,
+      status: 'completado',
+      analyzedAt: new Date()
+    };
+    
+    if (!analisis.respuestas) analisis.respuestas = [];
+    const idx = analisis.respuestas.findIndex(r => r.indicacionId === indId);
+    if (idx >= 0) analisis.respuestas[idx] = newResp;
+    else analisis.respuestas.push(newResp);
+    
+    await DataStore.saveAnalisis(analisis);
+    closeModal();
+    render();
+  } catch (error) {
+    closeModal();
+    alert('❌ Error al analizar: ' + error.message);
+  }
+}
+
+function editResponse(respId) {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const resp = analisis.respuestas.find(r => r.id === respId);
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Editar Respuesta</h2>
+        <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Propuesta de la IA:</label>
+          <div style="padding:1rem;background:#f9fafb;border-radius:0.5rem;max-height:200px;overflow-y:auto;">
+            <p class="text-sm">${resp.propuestaIA}</p>
+          </div>
+        </div>
+        
+        ${resp.referencias && resp.referencias.length > 0 ? `
+          <div class="form-group">
+            <label>Referencias encontradas:</label>
+            <p class="text-sm">
+              ${resp.referencias.map(ref => `<span class="reference">${ref.doc}, P${ref.pagina}</span>`).join(' ')}
+            </p>
+          </div>
+        ` : ''}
+        
+        <div class="form-group">
+          <label>Respuesta Final:</label>
+          <textarea id="edit-response">${resp.respuestaFinal || resp.propuestaIA}</textarea>
+          <p class="text-xs text-gray">Puedes editar y agregar referencias manualmente (D1, P5)</p>
+        </div>
+        
+        <div class="flex gap-2">
+          <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+          <button class="btn btn-success" onclick="saveEditedResponse('${respId}')">✅ Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function saveEditedResponse(respId) {
+  const finalText = document.getElementById('edit-response').value;
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  
+  analisis.respuestas = analisis.respuestas.map(r => 
+    r.id === respId ? { ...r, respuestaFinal: finalText, status: 'revisado' } : r
+  );
+  
+  await DataStore.saveAnalisis(analisis);
+  closeModal();
+  render();
+}
+
+
+function showBibliografia() {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📚 Bibliografía del Análisis</h2>
+        <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
+      </div>
+      <div class="modal-body">
+        ${(analisis.documentos || []).length === 0 ? `
+          <p class="text-gray text-center">No hay documentos en este análisis</p>
+        ` : `
+          <p class="text-sm text-gray mb-4">Total de documentos: ${analisis.documentos.length}</p>
+          ${analisis.documentos.map(doc => `
+            <div class="biblio-item">
+              <p><strong>${doc.displayId}:</strong> ${doc.nombre}</p>
+              <p class="text-sm text-gray">
+                📄 ${doc.paginas} páginas • 
+                💾 ${(doc.tamaño / 1024).toFixed(1)} KB • 
+                📅 ${new Date(doc.uploadedAt).toLocaleDateString('es-ES')}
+              </p>
+            </div>
+          `).join('')}
+        `}
+        <button class="btn btn-secondary mt-4" onclick="closeModal()">Cerrar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function showStats() {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const framework = currentData.frameworks.find(f => f.id === analisis.frameworkId);
+  
+  const respuestas = analisis.respuestas || [];
+  const totalIndicaciones = framework.categorias.reduce((sum, cat) => 
+    sum + cat.elementos.reduce((s, elem) => s + elem.indicaciones.length, 0), 0
+  );
+  
+  const completadas = respuestas.length;
+  const revisadas = respuestas.filter(r => r.status === 'revisado').length;
+  const pendientes = totalIndicaciones - completadas;
+  
+  const highConf = respuestas.filter(r => r.confianza >= 0.8).length;
+  const medConf = respuestas.filter(r => r.confianza >= 0.5 && r.confianza < 0.8).length;
+  const lowConf = respuestas.filter(r => r.confianza < 0.5).length;
+  
+  const totalTokens = respuestas.reduce((sum, r) => sum + (r.tokensUsados || 0), 0);
+  const totalCost = respuestas.reduce((sum, r) => sum + (r.costo || 0), 0);
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📊 Estadísticas del Análisis</h2>
+        <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
+      </div>
+      <div class="modal-body">
+        <div class="card" style="margin-bottom:1rem;">
+          <h3>Progreso</h3>
+          <p class="text-sm">Total de indicaciones: <strong>${totalIndicaciones}</strong></p>
+          <p class="text-sm">✅ Completadas: <strong>${completadas}</strong> (${Math.round(completadas/totalIndicaciones*100)}%)</p>
+          <p class="text-sm">👁️ Revisadas: <strong>${revisadas}</strong></p>
+          <p class="text-sm">⏳ Pendientes: <strong>${pendientes}</strong></p>
+        </div>
+        
+        <div class="card" style="margin-bottom:1rem;">
+          <h3>Confianza</h3>
+          <p class="text-sm">🟢 Alta confianza (≥80%): <strong>${highConf}</strong></p>
+          <p class="text-sm">🟡 Media confianza (50-79%): <strong>${medConf}</strong></p>
+          <p class="text-sm">🔴 Baja confianza (<50%): <strong>${lowConf}</strong></p>
+        </div>
+        
+        <div class="card">
+          <h3>Uso de IA</h3>
+          <p class="text-sm">🔤 Tokens usados: <strong>${totalTokens.toLocaleString()}</strong></p>
+          <p class="text-sm">💰 Costo total: <strong>${formatCost(totalCost)}</strong></p>
+          <p class="text-sm">🌡️ Temperatura: <strong>${analisis.temperature || 0.3}</strong></p>
+        </div>
+        
+        <button class="btn btn-secondary mt-4" onclick="closeModal()">Cerrar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function viewDocContent(displayId) {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const doc = analisis.documentos.find(d => d.displayId === displayId);
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h2>👁️ Contenido: ${doc.displayId} - ${doc.nombre}</h2>
+        <button onclick="closeModal()" class="btn btn-secondary btn-sm">❌</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-sm text-gray mb-4">
+          📄 ${doc.paginas} páginas • 
+          ${(doc.contenido.length / 1024).toFixed(1)} KB de texto extraído
+        </p>
+        <div style="max-height:400px;overflow-y:auto;padding:1rem;background:#f9fafb;border-radius:0.5rem;font-size:0.875rem;line-height:1.5;">
+          <pre style="white-space:pre-wrap;font-family:system-ui;">${doc.contenido.substring(0, 5000)}${doc.contenido.length > 5000 ? '\n\n... (texto truncado para visualización)' : ''}</pre>
+        </div>
+        <button class="btn btn-secondary mt-4" onclick="closeModal()">Cerrar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function exportAnalysis() {
+  const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
+  const framework = currentData.frameworks.find(f => f.id === analisis.frameworkId);
+  
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Generando...';
+  
+  try {
+    await exportToWord(analisis, framework);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⬇️ Exportar Word';
+  }
+}
+
+function closeModal() {
+  const modal = document.querySelector('.modal-overlay');
+  if (modal) modal.remove();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+
+async function init() {
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="container"><div class="loader"></div><p class="text-center text-gray mt-4">Cargando aplicación...</p></div>';
+  
+  try {
+    const [frameworks, analisis] = await Promise.all([
+      DataStore.getFrameworks(),
+      DataStore.getAnalisis()
+    ]);
+    
+    currentData.frameworks = frameworks;
+    currentData.analisis = analisis;
+    
+    render();
+    console.log('✅ Aplicación iniciada');
+    console.log('📊 Frameworks:', frameworks.length);
+    console.log('📊 Análisis:', analisis.length);
+  } catch (error) {
+    console.error('Error al iniciar:', error);
+    app.innerHTML = `
+      <div class="container" style="text-align:center;padding:4rem 1rem;">
+        <h1 style="color:#ef4444;">❌ Error al cargar</h1>
+        <p class="text-gray mt-4">${error.message}</p>
+        <button class="btn btn-primary mt-4" onclick="location.reload()">🔄 Reintentar</button>
+      </div>
+    `;
+  }
+}
+
+// Start
+document.addEventListener('DOMContentLoaded', init);
+if (document.readyState === 'complete') init();
+
   </script>
 </body>
 </html>
