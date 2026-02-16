@@ -14,6 +14,7 @@
   <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -446,89 +447,335 @@ FORMATO DE RESPUESTA (devuelve SOLO JSON válido, sin texto adicional):
 // EXPORTAR A WORD
 // ============================================================
 
+async function generateRadarChartImage(categoriesData) {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 600;
+    
+    const ctx = canvas.getContext('2d');
+    
+    const chart = new Chart(ctx, {
+      type: 'radar',
+      data: {
+        labels: categoriesData.map(c => c.nombre),
+        datasets: [{
+          label: 'Nivel de Confianza',
+          data: categoriesData.map(c => c.confianza),
+          backgroundColor: 'rgba(17, 24, 39, 0.2)',
+          borderColor: 'rgb(17, 24, 39)',
+          borderWidth: 2,
+          pointBackgroundColor: 'rgb(17, 24, 39)',
+          pointBorderColor: '#fff',
+          pointHoverBackgroundColor: '#fff',
+          pointHoverBorderColor: 'rgb(17, 24, 39)'
+        }]
+      },
+      options: {
+        responsive: false,
+        scales: {
+          r: {
+            beginAtZero: true,
+            max: 100,
+            ticks: {
+              stepSize: 20
+            }
+          }
+        },
+        plugins: {
+          title: {
+            display: true,
+            text: 'Análisis de Confianza por Categoría',
+            font: {
+              size: 18,
+              weight: 'bold'
+            }
+          },
+          legend: {
+            display: false
+          }
+        }
+      }
+    });
+    
+    setTimeout(() => {
+      const imageData = canvas.toDataURL('image/png');
+      chart.destroy();
+      resolve(imageData);
+    }, 500);
+  });
+}
+
 async function exportToWord(analisis, framework) {
   try {
-    // Verificar que docx esté disponible
     if (typeof docx === 'undefined') {
       throw new Error('La librería docx no está cargada. Recarga la página e intenta de nuevo.');
     }
     
-    const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+    const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, AlignmentType, ImageRun, BorderStyle } = docx;
     
-    const children = [
-      new Paragraph({ text: `Informe: ${analisis.nombre}`, heading: HeadingLevel.TITLE }),
-      new Paragraph({ text: `Framework: ${framework.nombre}`, heading: HeadingLevel.HEADING_2 }),
-      new Paragraph({ text: `Fecha: ${new Date().toLocaleDateString('es-ES')}` }),
-      new Paragraph({ text: '' }),
-      new Paragraph({ text: 'Bibliografía', heading: HeadingLevel.HEADING_1 })
-    ];
-    
-    // Bibliografía
-    (analisis.documentos || []).forEach(doc => {
-      children.push(new Paragraph({ 
-        text: `${doc.displayId}: ${doc.nombre} (${doc.paginas} páginas)` 
-      }));
+    // Calcular estadísticas por categoría
+    const categoriesData = framework.categorias.map(cat => {
+      const indicacionesCat = cat.elementos.reduce((sum, elem) => sum + elem.indicaciones.length, 0);
+      const respuestasCat = (analisis.respuestas || []).filter(r => r.categoriaId === cat.id);
+      const confianzaPromedio = respuestasCat.length > 0 
+        ? respuestasCat.reduce((sum, r) => sum + (r.confianza || 0), 0) / respuestasCat.length 
+        : 0;
+      
+      return {
+        nombre: cat.nombre,
+        total: indicacionesCat,
+        completadas: respuestasCat.length,
+        confianza: Math.round(confianzaPromedio * 100)
+      };
     });
     
+    // Generar gráfico de araña
+    const chartImage = await generateRadarChartImage(categoriesData);
+    const base64Data = chartImage.split(',')[1];
+    
+    // Calcular estadísticas globales
+    const totalIndicaciones = framework.categorias.reduce((sum, cat) => 
+      sum + cat.elementos.reduce((s, elem) => s + elem.indicaciones.length, 0), 0
+    );
+    const completadas = (analisis.respuestas || []).length;
+    const pendientes = totalIndicaciones - completadas;
+    const highConf = (analisis.respuestas || []).filter(r => (r.confianza || 0) >= 0.8).length;
+    const medConf = (analisis.respuestas || []).filter(r => (r.confianza || 0) >= 0.5 && (r.confianza || 0) < 0.8).length;
+    const lowConf = (analisis.respuestas || []).filter(r => (r.confianza || 0) < 0.5).length;
+    
+    const children = [];
+    
+    // === PORTADA ===
     children.push(
-      new Paragraph({ text: '' }),
-      new Paragraph({ text: 'Análisis Detallado', heading: HeadingLevel.HEADING_1 })
+      new Paragraph({ text: '', spacing: { after: 2000 } }),
+      new Paragraph({ text: 'INFORME DE ANÁLISIS GAP', heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER }),
+      new Paragraph({ text: '', spacing: { after: 1000 } }),
+      new Paragraph({ text: analisis.nombre, heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }),
+      new Paragraph({ text: '', spacing: { after: 500 } }),
+      new Paragraph({ text: `Framework: ${framework.nombre}`, alignment: AlignmentType.CENTER }),
+      new Paragraph({ text: `Fecha: ${new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}`, alignment: AlignmentType.CENTER }),
+      new Paragraph({ text: '', spacing: { after: 3000 } })
     );
     
-    // Contenido
+    // === RESUMEN EJECUTIVO ===
+    children.push(
+      new Paragraph({ text: 'Resumen Ejecutivo', heading: HeadingLevel.HEADING_1, pageBreakBefore: true }),
+      new Paragraph({ text: '' }),
+      new Paragraph({ 
+        children: [
+          new TextRun({ text: 'Estado del análisis: ', bold: true }),
+          new TextRun(`${completadas} de ${totalIndicaciones} indicaciones completadas (${Math.round(completadas/totalIndicaciones*100)}%)`)
+        ]
+      }),
+      new Paragraph({ 
+        children: [
+          new TextRun({ text: 'Pendientes: ', bold: true }),
+          new TextRun(`${pendientes} indicaciones`)
+        ]
+      }),
+      new Paragraph({ text: '' }),
+      new Paragraph({ text: 'Distribución de confianza:', bold: true }),
+      new Paragraph({ children: [new TextRun({ text: `• Alta confianza (≥80%): `, bold: true }), new TextRun({ text: `${highConf} indicaciones`, color: '059669' })] }),
+      new Paragraph({ children: [new TextRun({ text: `• Media confianza (50-79%): `, bold: true }), new TextRun({ text: `${medConf} indicaciones`, color: 'F59E0B' })] }),
+      new Paragraph({ children: [new TextRun({ text: `• Baja confianza (<50%): `, bold: true }), new TextRun({ text: `${lowConf} indicaciones`, color: 'EF4444' })] }),
+      new Paragraph({ text: '' })
+    );
+    
+    // === GRÁFICO DE ARAÑA ===
+    children.push(
+      new Paragraph({ text: 'Análisis Visual por Categoría', heading: HeadingLevel.HEADING_2 }),
+      new Paragraph({ text: '' }),
+      new Paragraph({
+        children: [
+          new ImageRun({
+            data: base64Data,
+            transformation: {
+              width: 500,
+              height: 500
+            }
+          })
+        ],
+        alignment: AlignmentType.CENTER
+      }),
+      new Paragraph({ text: '' })
+    );
+    
+    // === TABLA DE DATOS PARA GRÁFICO EDITABLE ===
+    children.push(
+      new Paragraph({ text: 'Datos del Gráfico (Editable)', heading: HeadingLevel.HEADING_2 }),
+      new Paragraph({ 
+        text: 'Para crear un gráfico editable: Selecciona la tabla → Insertar → Gráfico → Radar',
+        italics: true,
+        color: '6B7280'
+      }),
+      new Paragraph({ text: '' })
+    );
+    
+    const tableRows = [
+      new TableRow({
+        children: [
+          new TableCell({ children: [new Paragraph({ text: 'Categoría', bold: true })], shading: { fill: 'F3F4F6' } }),
+          new TableCell({ children: [new Paragraph({ text: 'Confianza (%)', bold: true })], shading: { fill: 'F3F4F6' } })
+        ]
+      }),
+      ...categoriesData.map(cat => new TableRow({
+        children: [
+          new TableCell({ children: [new Paragraph(cat.nombre)] }),
+          new TableCell({ children: [new Paragraph(cat.confianza.toString())] })
+        ]
+      }))
+    ];
+    
+    children.push(
+      new Table({
+        rows: tableRows,
+        width: { size: 100, type: WidthType.PERCENTAGE }
+      }),
+      new Paragraph({ text: '' })
+    );
+    
+    // === BIBLIOGRAFÍA ===
+    children.push(
+      new Paragraph({ text: 'Bibliografía', heading: HeadingLevel.HEADING_1, pageBreakBefore: true })
+    );
+    
+    if ((analisis.documentos || []).length === 0) {
+      children.push(new Paragraph({ text: 'No se utilizaron documentos en este análisis', italics: true }));
+    } else {
+      (analisis.documentos || []).forEach((doc, idx) => {
+        children.push(
+          new Paragraph({ 
+            text: `[${doc.displayId}] ${doc.nombre}`,
+            bullet: { level: 0 }
+          }),
+          new Paragraph({ 
+            text: `${doc.paginas || 'N/A'} páginas • ${doc.tamaño ? (doc.tamaño/1024).toFixed(1) : 'N/A'} KB • ${doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString('es-ES') : 'N/A'}`,
+            italics: true,
+            color: '6B7280'
+          })
+        );
+      });
+    }
+    
+    children.push(new Paragraph({ text: '' }));
+    
+    // === ANÁLISIS DETALLADO ===
+    children.push(
+      new Paragraph({ text: 'Análisis Detallado', heading: HeadingLevel.HEADING_1, pageBreakBefore: true })
+    );
+    
     framework.categorias.forEach(cat => {
-      children.push(new Paragraph({ text: cat.nombre, heading: HeadingLevel.HEADING_2 }));
+      children.push(
+        new Paragraph({ text: '', spacing: { before: 400 } }),
+        new Paragraph({ text: cat.nombre, heading: HeadingLevel.HEADING_2 })
+      );
+      
       cat.elementos.forEach(elem => {
-        children.push(new Paragraph({ text: elem.nombre, heading: HeadingLevel.HEADING_3 }));
+        children.push(
+          new Paragraph({ text: elem.nombre, heading: HeadingLevel.HEADING_3 })
+        );
+        
         elem.indicaciones.forEach(ind => {
           const resp = (analisis.respuestas || []).find(r => r.indicacionId === ind.id);
+          
+          children.push(
+            new Paragraph({ text: '', spacing: { before: 200 } }),
+            new Paragraph({ 
+              children: [
+                new TextRun({ text: 'Indicación: ', bold: true }),
+                new TextRun(ind.texto)
+              ]
+            })
+          );
+          
           if (resp) {
+            const confPercent = Math.round((resp.confianza || 0) * 100);
+            const confColor = confPercent >= 80 ? '059669' : confPercent >= 50 ? 'F59E0B' : 'EF4444';
+            
             children.push(
               new Paragraph({ 
                 children: [
-                  new TextRun({ text: 'Indicación: ', bold: true }), 
-                  new TextRun(ind.texto)
-                ] 
-              }),
-              new Paragraph({ 
-                children: [
-                  new TextRun({ text: 'Respuesta: ', bold: true }), 
+                  new TextRun({ text: 'Respuesta: ', bold: true }),
                   new TextRun(resp.respuestaFinal || resp.propuestaIA || 'Sin respuesta')
-                ] 
+                ]
               }),
               new Paragraph({ 
                 children: [
-                  new TextRun({ text: `Confianza: ${Math.round((resp.confianza || 0) * 100)}%`, italics: true })
-                ] 
+                  new TextRun({ text: 'Confianza: ', bold: true }),
+                  new TextRun({ text: `${confPercent}%`, color: confColor, bold: true })
+                ]
               })
             );
             
-            if (resp.gaps && resp.gaps.length > 0) {
-              children.push(new Paragraph({ 
-                children: [new TextRun({ text: 'Gaps detectados: ', bold: true, color: 'FF0000' })] 
-              }));
-              resp.gaps.forEach(gap => {
-                children.push(new Paragraph({ text: `  • ${gap}` }));
-              });
+            if (resp.documentosUsados && resp.documentosUsados.length > 0) {
+              children.push(
+                new Paragraph({ 
+                  children: [
+                    new TextRun({ text: 'Documentos consultados: ', bold: true, italics: true }),
+                    new TextRun({ text: resp.documentosUsados.join(', '), italics: true })
+                  ]
+                })
+              );
             }
             
-            children.push(new Paragraph({ text: '' }));
+            if (resp.gaps && resp.gaps.length > 0) {
+              children.push(
+                new Paragraph({ 
+                  children: [new TextRun({ text: 'Gaps detectados:', bold: true, color: 'DC2626' })] 
+                })
+              );
+              resp.gaps.forEach(gap => {
+                children.push(
+                  new Paragraph({ 
+                    text: gap,
+                    bullet: { level: 0 },
+                    color: 'DC2626'
+                  })
+                );
+              });
+            }
+          } else {
+            children.push(
+              new Paragraph({ 
+                children: [
+                  new TextRun({ text: 'Estado: ', bold: true }),
+                  new TextRun({ text: 'SIN ANALIZAR', color: '6B7280', italics: true })
+                ]
+              })
+            );
           }
         });
       });
     });
     
-    const doc = new Document({ sections: [{ children }] });
+    // Generar documento
+    const doc = new Document({ 
+      sections: [{ 
+        children,
+        properties: {
+          page: {
+            margin: {
+              top: 1440,
+              right: 1440,
+              bottom: 1440,
+              left: 1440
+            }
+          }
+        }
+      }] 
+    });
+    
     const blob = await Packer.toBlob(doc);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Analisis_${analisis.nombre.replace(/[^a-z0-9]/gi, '_')}.docx`;
+    a.download = `Informe_${analisis.nombre.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.docx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    alert('✅ Documento descargado exitosamente');
+    alert('✅ Informe descargado exitosamente');
   } catch (error) {
     console.error('Error exportando:', error);
     alert('❌ Error al exportar: ' + error.message);
@@ -644,13 +891,16 @@ function renderAnalysisList() {
       ` : `
         <div class="grid">
           ${analisisList.map(a => `
-            <div class="card clickable" onclick="viewAnalysis('${a.id}')">
-              <h3>${a.nombre}</h3>
-              <p class="text-gray text-sm">${a.frameworkNombre}</p>
-              <p class="text-gray text-sm mt-4">
-                📚 ${(a.documentos || []).length} documentos
-                ${a.temperature !== undefined ? `• 🌡️ Temp: ${a.temperature}` : ''}
-              </p>
+            <div class="card">
+              <div onclick="viewAnalysis('${a.id}')" style="cursor:pointer;">
+                <h3>${a.nombre}</h3>
+                <p class="text-gray text-sm">${a.frameworkNombre}</p>
+                <p class="text-gray text-sm mt-4">
+                  📚 ${(a.documentos || []).length} documentos
+                  ${a.temperature !== undefined ? `• 🌡️ ${a.temperature}` : ''}
+                </p>
+              </div>
+              <button class="btn btn-secondary btn-sm mt-4" onclick="event.stopPropagation(); deleteAnalisis('${a.id}')">🗑️ Eliminar</button>
             </div>
           `).join('')}
         </div>
@@ -1227,15 +1477,29 @@ async function saveEditedResponse(respId) {
 }
 
 async function deleteDocument(displayId) {
-  if (!confirm(`¿Eliminar documento ${displayId}?\n\n⚠️ ADVERTENCIA: Si hay análisis que referencian este documento, las referencias quedarán rotas.`)) return;
+  if (!confirm(`¿Eliminar ${displayId}?\n\n⚠️ Las referencias a este documento quedarán rotas.`)) return;
   
   const analisis = currentData.analisis.find(a => a.id === currentData.currentAnalisisId);
-  
-  // Solo eliminar, NO renumerar para mantener referencias
   analisis.documentos = analisis.documentos.filter(d => d.displayId !== displayId);
   
   await DataStore.saveAnalisis(analisis);
-  alert(`✅ Documento ${displayId} eliminado.\n\nLos IDs de otros documentos se mantienen para preservar referencias.`);
+  alert(`✅ ${displayId} eliminado`);
+  render();
+}
+
+async function deleteAnalisis(id) {
+  const analisis = currentData.analisis.find(a => a.id === id);
+  if (!confirm(`¿Eliminar análisis "${analisis.nombre}"?\n\nEsta acción no se puede deshacer.`)) return;
+  
+  if (db) {
+    await db.collection('analisis').doc(id).delete();
+  } else {
+    const all = JSON.parse(localStorage.getItem('analisis') || '[]');
+    localStorage.setItem('analisis', JSON.stringify(all.filter(a => a.id !== id)));
+  }
+  
+  currentData.analisis = currentData.analisis.filter(a => a.id !== id);
+  alert('✅ Análisis eliminado');
   render();
 }
 
